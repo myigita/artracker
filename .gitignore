@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# SQLite
+tracker.db
+*.db
+
+# Node / frontend
+node_modules/
+dist/
+
+# Env
+.env
+.env.local
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json
