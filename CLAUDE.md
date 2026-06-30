@@ -78,29 +78,55 @@ process.
 
 ## Data model
 
-A single `Link` table:
+> Revised from the original single-`Link`-table MVP spec: artists *and*
+> platforms are now their own tables, so trackers reference both by FK instead
+> of repeating free-text strings. `open_count` was dropped. Column names use
+> `date_created` / `last_checked` (not `created_at` / `last_checked_at` from
+> the original draft).
 
-| field          | type           | notes                                  |
-|----------------|----------------|-----------------------------------------|
-| id             | int, PK        | autoincrement                          |
-| title          | str, required  | display name, e.g. "Hana — Bluesky"    |
-| url            | str, required  | the link to open                       |
-| platform       | str, optional  | free-text tag, e.g. "Bluesky", "Pixiv" |
-| created_at     | datetime       | set on insert                          |
-| last_opened_at | datetime, null | null until first open                  |
-| open_count     | int            | starts at 0, bumped on each open       |
+**`Artist`**
+
+| field        | type          | notes                                |
+|--------------|---------------|----------------------------------------|
+| id           | int, PK       | autoincrement                        |
+| name         | str, required | unique — prevents duplicate artists  |
+| date_created | datetime      | set on insert                        |
+
+**`Platform`**
+
+| field        | type          | notes                                  |
+|--------------|---------------|-------------------------------------------|
+| id           | int, PK       | autoincrement                          |
+| name         | str, required | unique — e.g. "Bluesky", "Pixiv"       |
+| date_created | datetime      | set on insert                          |
+
+**`Tracker`**
+
+| field         | type           | notes                                              |
+|---------------|----------------|-----------------------------------------------------|
+| id            | int, PK        | autoincrement                                      |
+| artist_id     | int, FK        | references `artists.id`, required                  |
+| platform_id   | int, FK        | references `platforms.id`, required                |
+| name          | str, required  | auto-built at creation as `"{artist.name} — {platform.name}"`, not client-supplied |
+| url           | str, required  | the link to open/check                             |
+| date_created  | datetime       | set on insert                                      |
+| last_checked  | datetime, null | null until first check                             |
+
+`Base` (the SQLAlchemy declarative base) is defined in `models.py`, not
+`database.py` — `database.py` only owns `engine`/`SessionLocal` and imports
+`Base` from `models.py` for `Base.metadata.create_all()`.
 
 ## API surface
 
-| Method | Path                   | Purpose                                 |
-|--------|------------------------|------------------------------------------|
-| GET    | `/api/links`           | List all links (newest first)           |
-| POST   | `/api/links`           | Add a link `{title, url, platform?}`    |
-| POST   | `/api/links/{id}/open` | Record an open (stamp time, bump count) |
-| DELETE | `/api/links/{id}`      | Remove a link                           |
+| Method | Path                      | Purpose                                                       |
+|--------|---------------------------|------------------------------------------------------------------|
+| GET    | `/api/trackers`           | List all trackers (newest first)                              |
+| POST   | `/api/trackers`           | Add a tracker `{artist_name, platform_name, url}` — looks up artist and platform by name or creates each if new; `name` is server-generated |
+| POST   | `/api/trackers/{id}/check`| Record a check (stamp `last_checked`)                         |
+| DELETE | `/api/trackers/{id}`      | Remove a tracker                                               |
 
-Use Pydantic models for request/response. Return the updated link from the `open`
-endpoint so the UI can refresh that row in place.
+Use Pydantic models for request/response. Return the updated tracker from the
+`check` endpoint so the UI can refresh that row in place.
 
 ## Project layout (to scaffold)
 
@@ -110,8 +136,8 @@ artist-tracker/
 │   ├── pyproject.toml          # or requirements.txt: fastapi, uvicorn[standard], sqlalchemy, pydantic
 │   ├── app/
 │   │   ├── main.py             # FastAPI app, router include, optional StaticFiles mount
-│   │   ├── database.py         # engine, SessionLocal, Base
-│   │   ├── models.py           # Link SQLAlchemy model
+│   │   ├── database.py         # engine, SessionLocal (imports Base from models.py)
+│   │   ├── models.py           # Base, Artist, Platform, Tracker SQLAlchemy models
 │   │   ├── schemas.py          # Pydantic request/response models
 │   │   └── routes.py           # the four endpoints
 │   └── tracker.db              # created at runtime (gitignore it)
@@ -121,9 +147,9 @@ artist-tracker/
     ├── index.html
     └── src/
         ├── main.tsx
-        ├── App.tsx             # list + add form + open/delete
+        ├── App.tsx             # list + add form + check/delete
         ├── api.ts              # typed fetch helpers
-        └── components/         # LinkCard, AddLinkForm, etc.
+        └── components/         # TrackerCard, AddTrackerForm, etc.
 ```
 
 ## Commands (once scaffolded)
@@ -139,17 +165,17 @@ above, matching this shape:
 
 ## Frontend behaviour (the MVP UX)
 
-- An add form (title, url, platform-optional) at the top.
-- A list of cards, newest first, each showing title, platform tag, url, and a
-  relative "last opened" stamp (e.g. "3h ago", "never").
-- **Signature detail to keep:** the last-opened stamp's colour ages from a warm
-  accent (opened today) to muted grey (stale), so neglected links surface visually.
-  Also show the open count.
-- Clicking **Open** opens the url in a new tab *and* POSTs to `/api/links/{id}/open`,
-  then updates that card in place. Opening must still work even if the stamp POST
-  fails (fire-and-forget).
+- An add form (artist name, platform name, url — all required) at the top.
+- A list of cards, newest first, each showing tracker name, platform tag, url,
+  and a relative "last checked" stamp (e.g. "3h ago", "never").
+- **Signature detail to keep:** the last-checked stamp's colour ages from a warm
+  accent (checked today) to muted grey (stale), so neglected trackers surface
+  visually.
+- Clicking **Open** opens the url in a new tab *and* POSTs to
+  `/api/trackers/{id}/check`, then updates that card in place. Opening must
+  still work even if the stamp POST fails (fire-and-forget).
 - A delete (✕) per card.
-- Empty state: a short prompt to add the first link.
+- Empty state: a short prompt to add the first tracker.
 - Quality floor: responsive to mobile, visible keyboard focus, respects
   `prefers-reduced-motion`.
 
