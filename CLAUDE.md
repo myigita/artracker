@@ -40,7 +40,7 @@ implementation code; Claude guides and reviews.**
 ## Stack (decided — Python + React)
 
 - **Backend:** Python 3.12 + **FastAPI**, REST API, served by Uvicorn
-- **DB:** SQLite via **SQLAlchemy** (single file `tracker.db`, schema created on startup)
+- **DB:** SQLite via **SQLAlchemy** (single file `artracker.db`, schema created on startup)
 - **Frontend:** **React + TypeScript + Vite** (single-page app)
 
 This replaces an earlier Java/Spring Boot + Vue scaffold, which is **abandoned**.
@@ -140,7 +140,7 @@ artist-tracker/
 │   │   ├── models.py           # Base, Artist, Platform, Tracker SQLAlchemy models
 │   │   ├── schemas.py          # Pydantic request/response models
 │   │   └── routes.py           # the four endpoints
-│   └── tracker.db              # created at runtime (gitignore it)
+│   └── artracker.db            # created at runtime (gitignore it)
 └── frontend/
     ├── package.json            # vite, react, react-dom, typescript, @types/*
     ├── vite.config.ts          # /api proxy to :8000
