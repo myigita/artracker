@@ -5,13 +5,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 class Base(DeclarativeBase):
 	pass
 
-class Artist(Base):
-	__tablename__ = "artists"
+class Subject(Base):
+	__tablename__ = "subjects"
 
 	id: Mapped[int] = mapped_column(primary_key=True)
 	name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
 	date_created: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-	trackers: Mapped[list["Tracker"]] = relationship(back_populates="artist")
+	trackers: Mapped[list["Tracker"]] = relationship(back_populates="subject")
 
 class Platform(Base):
 	__tablename__ = "platforms"
@@ -26,9 +26,10 @@ class Tracker(Base):
 
 	id: Mapped[int] = mapped_column(primary_key=True)
 	name: Mapped[str] = mapped_column(String(255), nullable=False)
+	description: Mapped[str] = mapped_column(String(255), nullable=True)
 
-	artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id"), nullable=False)
-	artist: Mapped["Artist"] = relationship(back_populates="trackers")
+	subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id"), nullable=False)
+	subject: Mapped["Subject"] = relationship(back_populates="trackers")
 
 	platform_id: Mapped[int] = mapped_column(ForeignKey("platforms.id"), nullable=False)
 	platform: Mapped["Platform"] = relationship(back_populates="trackers")
