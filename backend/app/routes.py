@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 
 from .database import get_db
-from .models import Subject, Tracker, Platform
+from .models import Subject, Tracker, Platform, utcnow
 from .schemas import (
 	TrackerIn,
 	TrackerOut,
@@ -10,7 +10,6 @@ from .schemas import (
 	PlatformIn,
 	PlatformOut,
 )
-from datetime import datetime
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/trackers")
@@ -29,7 +28,7 @@ def get_tracker(tracker_id: int, db: Session = Depends(get_db)):
 		return tracker
 	raise HTTPException(status_code=404, detail="Tracker not found")
 
-@router.post("/", response_model=TrackerOut)
+@router.post("/", response_model=TrackerOut, status_code=201)
 def create_tracker(tracker_in: TrackerIn, db: Session = Depends(get_db)):
 	subject = db.query(Subject).filter(Subject.name == tracker_in.subject_name).first()
 	if not subject:
@@ -58,7 +57,7 @@ def check_tracker(tracker_id: int, db: Session = Depends(get_db)):
 	if not tracker:
 		raise HTTPException(status_code=404, detail="Tracker not found")
 
-	tracker.last_checked = datetime.utcnow()
+	tracker.last_checked = utcnow()
 	db.commit()
 	return tracker
 

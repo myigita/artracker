@@ -1,0 +1,8 @@
+# Backend dependencies. Install into backend/.venv with:
+#   python -m venv .venv && .venv/bin/pip install -r requirements.txt
+#
+# Top-level deps only; pip resolves the rest (starlette, pydantic-core, etc.).
+fastapi==0.138.2
+uvicorn[standard]==0.49.0
+sqlalchemy==2.0.51
+pydantic==2.13.4

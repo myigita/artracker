@@ -1,5 +1,18 @@
-from pydantic import BaseModel
-from datetime import datetime
+from pydantic import BaseModel, PlainSerializer
+from datetime import datetime, timezone
+from typing import Annotated
+
+
+def _serialize_utc(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc).isoformat()
+
+
+UtcDatetime = Annotated[
+    datetime,
+    PlainSerializer(_serialize_utc, return_type=str, when_used="json"),
+]
 
 class SubjectIn(BaseModel):
     name: str
@@ -7,7 +20,7 @@ class SubjectIn(BaseModel):
 class SubjectOut(BaseModel):
     id: int
     name: str
-    date_created: datetime
+    date_created: UtcDatetime
 
     model_config = {"from_attributes": True}
 
@@ -17,7 +30,7 @@ class PlatformIn(BaseModel):
 class PlatformOut(BaseModel):
     id: int
     name: str
-    date_created: datetime
+    date_created: UtcDatetime
 
     model_config = {"from_attributes": True}
 
@@ -35,7 +48,7 @@ class TrackerOut(BaseModel):
     platform_name: str
     url: str
     description: str | None
-    date_created: datetime
-    last_checked: datetime | None
+    date_created: UtcDatetime
+    last_checked: UtcDatetime | None
 
     model_config = {"from_attributes": True}
