@@ -1,6 +1,26 @@
 from pydantic import BaseModel
 from datetime import datetime
 
+class SubjectIn(BaseModel):
+    name: str
+
+class SubjectOut(BaseModel):
+    id: int
+    name: str
+    date_created: datetime
+
+    model_config = {"from_attributes": True}
+
+class PlatformIn(BaseModel):
+    name: str
+
+class PlatformOut(BaseModel):
+    id: int
+    name: str
+    date_created: datetime
+
+    model_config = {"from_attributes": True}
+
 class TrackerIn(BaseModel):
     name: str | None = None
     subject_name: str

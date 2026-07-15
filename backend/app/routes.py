@@ -2,11 +2,20 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from .database import get_db
 from .models import Subject, Tracker, Platform
-from .schemas import TrackerIn, TrackerOut
+from .schemas import (
+	TrackerIn,
+	TrackerOut,
+	SubjectIn,
+	SubjectOut,
+	PlatformIn,
+	PlatformOut,
+)
 from datetime import datetime
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/trackers")
+subjects_router = APIRouter(prefix="/api/subjects")
+platforms_router = APIRouter(prefix="/api/platforms")
 
 @router.get("/", response_model=list[TrackerOut])
 def get_trackers(db: Session = Depends(get_db)):
@@ -62,3 +71,65 @@ def delete_tracker(tracker_id: int, db: Session = Depends(get_db)):
 	db.delete(tracker)
 	db.commit()
 	return tracker
+
+@subjects_router.get("/", response_model=list[SubjectOut])
+def get_subjects(db: Session = Depends(get_db)):
+	return db.query(Subject).order_by(Subject.name).all()
+
+@subjects_router.post("/", response_model=SubjectOut, status_code=201)
+def create_subject(subject_in: SubjectIn, db: Session = Depends(get_db)):
+	existing = db.query(Subject).filter(Subject.name == subject_in.name).first()
+	if existing:
+		raise HTTPException(status_code=409, detail="Subject already exists")
+
+	subject = Subject(name=subject_in.name)
+	db.add(subject)
+	db.commit()
+	return subject
+
+@subjects_router.delete("/{subject_id}", status_code=204)
+def delete_subject(subject_id: int, db: Session = Depends(get_db)):
+	subject = db.query(Subject).filter(Subject.id == subject_id).first()
+	if not subject:
+		raise HTTPException(status_code=404, detail="Subject not found")
+
+	tracker_count = db.query(Tracker).filter(Tracker.subject_id == subject_id).count()
+	if tracker_count:
+		raise HTTPException(
+			status_code=409,
+			detail=f"Subject still has {tracker_count} tracker(s); delete those first",
+		)
+
+	db.delete(subject)
+	db.commit()
+
+@platforms_router.get("/", response_model=list[PlatformOut])
+def get_platforms(db: Session = Depends(get_db)):
+	return db.query(Platform).order_by(Platform.name).all()
+
+@platforms_router.post("/", response_model=PlatformOut, status_code=201)
+def create_platform(platform_in: PlatformIn, db: Session = Depends(get_db)):
+	existing = db.query(Platform).filter(Platform.name == platform_in.name).first()
+	if existing:
+		raise HTTPException(status_code=409, detail="Platform already exists")
+
+	platform = Platform(name=platform_in.name)
+	db.add(platform)
+	db.commit()
+	return platform
+
+@platforms_router.delete("/{platform_id}", status_code=204)
+def delete_platform(platform_id: int, db: Session = Depends(get_db)):
+	platform = db.query(Platform).filter(Platform.id == platform_id).first()
+	if not platform:
+		raise HTTPException(status_code=404, detail="Platform not found")
+
+	tracker_count = db.query(Tracker).filter(Tracker.platform_id == platform_id).count()
+	if tracker_count:
+		raise HTTPException(
+			status_code=409,
+			detail=f"Platform still has {tracker_count} tracker(s); delete those first",
+		)
+
+	db.delete(platform)
+	db.commit()
