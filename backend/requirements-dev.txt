@@ -1,0 +1,9 @@
+# Test-only dependencies. Not needed to run the app.
+#   .venv/bin/pip install -r requirements-dev.txt
+#
+# httpx2 is what fastapi's TestClient runs on — without it, importing
+# TestClient raises RuntimeError. It must be httpx2, not httpx: starlette 1.x
+# deprecated the old httpx backend and warns if it finds it.
+-r requirements.txt
+pytest==9.1.1
+httpx2==2.7.0
