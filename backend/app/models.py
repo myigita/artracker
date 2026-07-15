@@ -37,3 +37,11 @@ class Tracker(Base):
 	url: Mapped[str] = mapped_column(String(255), nullable=False)
 	last_checked: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 	date_created: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+	@property
+	def subject_name(self) -> str:
+		return self.subject.name
+
+	@property
+	def platform_name(self) -> str:
+		return self.platform.name

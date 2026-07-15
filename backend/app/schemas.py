@@ -1,7 +1,8 @@
 from pydantic import BaseModel
 from datetime import datetime
 
-class TrackerCreate(BaseModel):
+class TrackerIn(BaseModel):
+    name: str | None = None
     subject_name: str
     platform_name: str
     url: str

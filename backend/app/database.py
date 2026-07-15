@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
 from .models import Base
 
 engine = create_engine("sqlite:///artracker.db", connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 
 def get_db():
 	db = SessionLocal()
