@@ -1,5 +1,12 @@
+import TrackerPanel from './components/TrackerPanel'
+
 function App() {
-  return <h1>Artracker</h1>
+  return (
+    <div>
+      <h1>Artracker</h1>
+      <TrackerPanel />
+    </div>
+  )
 }
 
 export default App
