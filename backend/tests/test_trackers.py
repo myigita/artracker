@@ -309,3 +309,100 @@ def test_update_rejects_explicit_null_name(client, subject, platform):
 	assert client.patch(
 		f"/api/trackers/{created['id']}", json={"name": None}
 	).status_code == 400
+
+
+def test_undo_restores_previous_last_checked(client, subject, platform):
+	"""The undo button's whole job: put back the stamp that was there before."""
+	created = make_tracker(client, subject, platform).json()
+	client.post(f"/api/trackers/{created['id']}/check")
+	stamped = client.get(f"/api/trackers/{created['id']}").json()["last_checked"]
+	assert stamped is not None
+
+	# check again, then undo back to the first stamp
+	client.post(f"/api/trackers/{created['id']}/check")
+	response = client.patch(
+		f"/api/trackers/{created['id']}", json={"last_checked": stamped}
+	)
+
+	assert response.status_code == 200
+	assert response.json()["last_checked"] == stamped
+
+
+def test_undo_can_restore_never_checked(client, subject, platform):
+	"""A tracker checked for the first time has no previous stamp, so undo sends
+	null. That has to be allowed — unlike a null name, which 400s."""
+	created = make_tracker(client, subject, platform).json()
+	client.post(f"/api/trackers/{created['id']}/check")
+
+	response = client.patch(
+		f"/api/trackers/{created['id']}", json={"last_checked": None}
+	)
+
+	assert response.status_code == 200
+	assert response.json()["last_checked"] is None
+
+
+def test_inbound_last_checked_is_converted_to_utc(client, subject, platform):
+	"""An aware datetime must be CONVERTED, not just stripped of its tzinfo.
+
+	SQLite discards tzinfo on its own, but without converting — so a naive write
+	of "12:00+03:00" would store 12:00 UTC and read back three hours late. The
+	stored value has to be the same instant, 09:00Z.
+	"""
+	created = make_tracker(client, subject, platform).json()
+
+	body = client.patch(
+		f"/api/trackers/{created['id']}",
+		json={"last_checked": "2026-08-15T12:00:00+03:00"},
+	).json()
+
+	assert body["last_checked"] == "2026-08-15T09:00:00+00:00"
+
+
+def test_undo_round_trips_through_the_wire_format(client, subject, platform):
+	"""The value the UI sends back is exactly the string the API gave it, so the
+	serialize -> parse -> store -> serialize loop has to be lossless."""
+	created = make_tracker(client, subject, platform).json()
+	client.post(f"/api/trackers/{created['id']}/check")
+	original = client.get(f"/api/trackers/{created['id']}").json()["last_checked"]
+
+	client.patch(f"/api/trackers/{created['id']}", json={"last_checked": None})
+	restored = client.patch(
+		f"/api/trackers/{created['id']}", json={"last_checked": original}
+	).json()["last_checked"]
+
+	assert restored == original
+
+
+def test_tracker_exposes_subject_category(client, subject, platform, category):
+	"""subject_category is a TWO-hop lazy load (tracker -> subject -> category),
+	so it's exposed to the same DetachedInstanceError that
+	test_list_exposes_subject_and_platform_names pins down — one hop further out.
+	Asserted on the list endpoint for that reason, not just on the POST response.
+	"""
+	client.patch(f"/api/subjects/{subject['id']}", json={"category_name": category["name"]})
+	make_tracker(client, subject, platform)
+
+	response = client.get("/api/trackers/")
+
+	assert response.status_code == 200
+	assert response.json()[0]["subject_category"] == "Character"
+
+
+def test_tracker_subject_category_is_null_when_uncategorized(client, subject, platform):
+	body = make_tracker(client, subject, platform).json()
+
+	assert body["subject_category"] is None
+
+
+def test_tracker_subject_category_follows_the_subject(client, subject, platform, category):
+	"""It's derived, not copied — recategorizing the subject moves every tracker
+	hanging off it, with no write to the trackers table."""
+	make_tracker(client, subject, platform)
+	client.patch(f"/api/subjects/{subject['id']}", json={"category_name": category["name"]})
+
+	assert client.get("/api/trackers/").json()[0]["subject_category"] == "Character"
+
+	client.patch(f"/api/subjects/{subject['id']}", json={"category_name": None})
+
+	assert client.get("/api/trackers/").json()[0]["subject_category"] is None

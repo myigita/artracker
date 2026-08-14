@@ -1,28 +1,33 @@
 import { useState, useEffect } from 'react';
-import type { Tracker, Subject, Platform } from '../api';
+import type { Tracker, Subject, Platform, Category } from '../api';
 import {
 	getTrackers,
 	getSubjects,
 	getPlatforms,
+	getCategories,
 	createSubject,
 	createPlatform,
+	createCategory,
 	deleteSubject,
 	deletePlatform,
+	deleteCategory,
 } from '../api';
 import TrackerCard from './TrackerCard';
 import AddTrackerForm from './AddTrackerForm';
 import AddNameForm from './AddNameForm';
 import NameList from './NameList';
+import SubjectCategorySelect from './SubjectCategorySelect';
 
-// Only one form is open at a time, so a single value beats three booleans —
+// Only one form is open at a time, so a single value beats four booleans —
 // it makes "these are mutually exclusive" true by construction.
-type OpenForm = 'tracker' | 'subject' | 'platform' | null;
-type Tab = 'trackers' | 'subjects' | 'platforms';
+type OpenForm = 'tracker' | 'subject' | 'platform' | 'category' | null;
+type Tab = 'trackers' | 'subjects' | 'platforms' | 'categories';
 
 const TABS: { id: Tab; label: string }[] = [
 	{ id: 'trackers', label: 'Trackers' },
 	{ id: 'subjects', label: 'Subjects' },
 	{ id: 'platforms', label: 'Platforms' },
+	{ id: 'categories', label: 'Categories' },
 ];
 
 export default function TrackerPanel() {
@@ -30,6 +35,7 @@ export default function TrackerPanel() {
 	const [trackers, setTrackers] = useState<Tracker[]>([]);
 	const [subjects, setSubjects] = useState<Subject[]>([]);
 	const [platforms, setPlatforms] = useState<Platform[]>([]);
+	const [categories, setCategories] = useState<Category[]>([]);
 	const [tab, setTab] = useState<Tab>('trackers');
 	const [openForm, setOpenForm] = useState<OpenForm>(null);
 	const [notice, setNotice] = useState<string | null>(null);
@@ -53,9 +59,18 @@ export default function TrackerPanel() {
 		return getPlatforms().then(setPlatforms);
 	}
 
+	function fetchCategories() {
+		return getCategories().then(setCategories);
+	}
+
 	function fetchAll() {
 		setLoadError(false);
-		return Promise.all([fetchTrackers(), fetchSubjects(), fetchPlatforms()])
+		return Promise.all([
+			fetchTrackers(),
+			fetchSubjects(),
+			fetchPlatforms(),
+			fetchCategories(),
+		])
 			.catch(() => setLoadError(true))
 			.finally(() => setLoading(false));
 	}
@@ -71,7 +86,9 @@ export default function TrackerPanel() {
 
 	function handleNameCreated(kind: string, name: string) {
 		setOpenForm(null);
-		Promise.all([fetchSubjects(), fetchPlatforms()]).catch(() => setLoadError(true));
+		Promise.all([fetchSubjects(), fetchPlatforms(), fetchCategories()]).catch(() =>
+			setLoadError(true),
+		);
 		setNotice(`Added ${kind} “${name}”.`);
 	}
 
@@ -83,6 +100,11 @@ export default function TrackerPanel() {
 
 	function platformUsage(name: string) {
 		return trackers.filter((t) => t.platform_name === name).length;
+	}
+
+	// A category is used by subjects, not trackers — same idea, different list.
+	function categoryUsage(name: string) {
+		return subjects.filter((s) => s.category_name === name).length;
 	}
 
 	function openFormAndClearNotice(form: OpenForm) {
@@ -97,6 +119,7 @@ export default function TrackerPanel() {
 		trackers: trackers.length,
 		subjects: subjects.length,
 		platforms: platforms.length,
+		categories: categories.length,
 	};
 
 	// The "+ Add" button follows whichever tab you're on.
@@ -104,12 +127,14 @@ export default function TrackerPanel() {
 		trackers: 'tracker',
 		subjects: 'subject',
 		platforms: 'platform',
+		categories: 'category',
 	};
 
 	const addLabel: Record<Tab, string> = {
 		trackers: '+ Add tracker',
 		subjects: '+ Add subject',
 		platforms: '+ Add platform',
+		categories: '+ Add category',
 	};
 
 	const cards = trackers.map((tracker) => (
@@ -188,6 +213,15 @@ export default function TrackerPanel() {
 				/>
 			)}
 
+			{openForm === 'category' && (
+				<AddNameForm
+					label="Category"
+					onCreate={createCategory}
+					onCreated={(name) => handleNameCreated('category', name)}
+					onCancel={() => setOpenForm(null)}
+				/>
+			)}
+
 			{loadError && (
 				<div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-sm text-[var(--text-h)]">
 					<p className="font-medium">Couldn’t reach the server.</p>
@@ -227,6 +261,13 @@ export default function TrackerPanel() {
 					label="Subject"
 					items={subjects}
 					usageCount={subjectUsage}
+					renderExtra={(subject) => (
+						<SubjectCategorySelect
+							subject={subject}
+							categories={categories}
+							onChanged={fetchSubjects}
+						/>
+					)}
 					onDelete={deleteSubject}
 					onDeleted={fetchSubjects}
 				/>
@@ -239,6 +280,19 @@ export default function TrackerPanel() {
 					usageCount={platformUsage}
 					onDelete={deletePlatform}
 					onDeleted={fetchPlatforms}
+				/>
+			)}
+
+			{!loading && !loadError && tab === 'categories' && (
+				<NameList
+					label="Category"
+					items={categories}
+					usageCount={categoryUsage}
+					usageLabel="subject"
+					plural="categories"
+					blockedHint="Reassign those first."
+					onDelete={deleteCategory}
+					onDeleted={fetchCategories}
 				/>
 			)}
 		</div>

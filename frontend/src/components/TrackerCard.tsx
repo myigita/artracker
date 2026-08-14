@@ -35,11 +35,42 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 	const [description, setDescription] = useState(tracker.description ?? '');
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	// The stamp to put back, captured before the check overwrote it. Wrapped in
+	// an object because the value itself can legitimately be null ("never
+	// checked"), which would otherwise be indistinguishable from "nothing to undo".
+	const [undo, setUndo] = useState<{ previous: string | null } | null>(null);
+
+	// Deliberately NOT on a timer. Opening a link moves focus to a new tab, so
+	// the user is looking at the artist's page — possibly for minutes — before
+	// they come back and realise they didn't mean to mark it checked. A short
+	// countdown would always have expired by the moment the offer is wanted.
+	// The offer lasts until it's used or the page is reloaded.
 
 	function handleOpen() {
+		// Read this BEFORE the check lands — afterwards it's already overwritten.
+		const previous = tracker.last_checked;
+
+		// Deliberately fire-and-forget: the link opens via the anchor's own
+		// navigation, so a failed stamp must not block it. No undo is offered if
+		// the stamp never happened.
 		checkTracker(tracker.id)
-			.then(() => onChecked())
+			.then(() => {
+				setUndo({ previous });
+				onChecked();
+			})
 			.catch(() => {});
+	}
+
+	function handleUndo() {
+		if (!undo) return;
+
+		setError(null);
+		updateTracker(tracker.id, { last_checked: undo.previous })
+			.then(() => {
+				setUndo(null);
+				onUpdated();
+			})
+			.catch(() => setError('Could not undo that.'));
 	}
 
 	function handleDelete() {
@@ -128,6 +159,13 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 		<div className="rounded-lg border border-[var(--border)] p-4 shadow-sm transition-colors hover:border-[var(--accent-border)]">
 			<div className="flex items-center gap-2">
 				<h3 className="truncate font-semibold text-[var(--text-h)]">{tracker.name}</h3>
+				{/* Omitted entirely when the subject has no category — an empty
+				    pill would be noise on every uncategorized card. */}
+				{tracker.subject_category && (
+					<span className="shrink-0 rounded-full bg-[var(--accent-bg)] px-2 py-0.5 text-xs text-[var(--text)]">
+						{tracker.subject_category}
+					</span>
+				)}
 				<a
 					href={tracker.url}
 					target="_blank"
@@ -142,6 +180,17 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 				<span className="ml-auto shrink-0 text-xs text-[var(--text)]">
 					{timeAgo(tracker.last_checked)}
 				</span>
+				{undo && (
+					<button
+						type="button"
+						onClick={handleUndo}
+						aria-label={`Undo the last-checked update for ${tracker.name}`}
+						title="Put the previous “last checked” time back"
+						className="shrink-0 cursor-pointer rounded-md px-1 py-0.5 text-xs font-medium text-[var(--accent)] underline-offset-2 transition-colors hover:underline focus-visible:underline"
+					>
+						Undo
+					</button>
+				)}
 				<button
 					type="button"
 					onClick={startEditing}

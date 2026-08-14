@@ -8,6 +8,14 @@ def utcnow() -> datetime:
 class Base(DeclarativeBase):
 	pass
 
+class Category(Base):
+	__tablename__ = "categories"
+
+	id: Mapped[int] = mapped_column(primary_key=True)
+	name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+	date_created: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+	subjects: Mapped[list["Subject"]] = relationship(back_populates="category")
+
 class Subject(Base):
 	__tablename__ = "subjects"
 
@@ -15,6 +23,16 @@ class Subject(Base):
 	name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
 	date_created: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 	trackers: Mapped[list["Tracker"]] = relationship(back_populates="subject")
+
+	# Optional: subjects predate categories, and there's no sensible default to
+	# backfill. `Mapped[int | None]` is what makes the column nullable — SQLAlchemy
+	# 2.0 reads nullability off the annotation.
+	category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+	category: Mapped["Category | None"] = relationship(back_populates="subjects")
+
+	@property
+	def category_name(self) -> str | None:
+		return self.category.name if self.category else None
 
 class Platform(Base):
 	__tablename__ = "platforms"
@@ -48,3 +66,9 @@ class Tracker(Base):
 	@property
 	def platform_name(self) -> str:
 		return self.platform.name
+
+	# Two hops (tracker -> subject -> category), so this is the one property here
+	# that can be None: a subject doesn't have to be categorized.
+	@property
+	def subject_category(self) -> str | None:
+		return self.subject.category_name

@@ -81,3 +81,75 @@ def test_name_is_stripped(client):
 	body = client.post("/api/subjects/", json={"name": "  Padded  "}).json()
 
 	assert body["name"] == "Padded"
+
+
+def test_subject_has_no_category_by_default(client, subject):
+	assert subject["category_name"] is None
+
+
+def test_create_subject_with_category(client, category):
+	response = client.post(
+		"/api/subjects/",
+		json={"name": "Denji", "category_name": category["name"]},
+	)
+
+	assert response.status_code == 201
+	assert response.json()["category_name"] == "Character"
+
+
+def test_create_subject_with_unknown_category_400s(client):
+	response = client.post(
+		"/api/subjects/",
+		json={"name": "Denji", "category_name": "Nope"},
+	)
+
+	assert response.status_code == 400
+	# and nothing was created
+	assert client.get("/api/subjects/").json() == []
+
+
+def test_patch_assigns_category(client, subject, category):
+	response = client.patch(
+		f"/api/subjects/{subject['id']}",
+		json={"category_name": category["name"]},
+	)
+
+	assert response.status_code == 200
+	assert response.json()["category_name"] == "Character"
+	# and it stuck
+	assert client.get("/api/subjects/").json()[0]["category_name"] == "Character"
+
+
+def test_patch_with_null_clears_category(client, subject, category):
+	client.patch(f"/api/subjects/{subject['id']}", json={"category_name": category["name"]})
+
+	response = client.patch(f"/api/subjects/{subject['id']}", json={"category_name": None})
+
+	assert response.status_code == 200
+	assert response.json()["category_name"] is None
+
+
+def test_patch_with_omitted_field_leaves_category_alone(client, subject, category):
+	client.patch(f"/api/subjects/{subject['id']}", json={"category_name": category["name"]})
+
+	# An empty body is not the same as {"category_name": null} — exclude_unset
+	# is what keeps those two apart.
+	response = client.patch(f"/api/subjects/{subject['id']}", json={})
+
+	assert response.status_code == 200
+	assert response.json()["category_name"] == "Character"
+
+
+def test_patch_unknown_category_400s(client, subject):
+	response = client.patch(
+		f"/api/subjects/{subject['id']}",
+		json={"category_name": "Nope"},
+	)
+
+	assert response.status_code == 400
+
+
+def test_patch_missing_subject_404s(client):
+	response = client.patch("/api/subjects/999999", json={"category_name": None})
+
+	assert response.status_code == 404

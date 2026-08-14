@@ -73,3 +73,9 @@ def subject(client):
 def platform(client):
 	"""A platform that already exists. Returns the response JSON."""
 	return client.post("/api/platforms/", json={"name": "Pixiv"}).json()
+
+
+@pytest.fixture
+def category(client):
+	"""A category that already exists. Returns the response JSON."""
+	return client.post("/api/categories/", json={"name": "Character"}).json()

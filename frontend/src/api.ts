@@ -6,6 +6,8 @@ export type Tracker = {
 	id: number,
 	name: string,
 	subject_name: string,
+	// The category of this tracker's subject, or null if it has none.
+	subject_category: string | null,
 	platform_name: string,
 	url: string,
 	description: string | null,
@@ -16,10 +18,17 @@ export type Tracker = {
 export type Subject = {
 	id: number,
 	name: string,
+	category_name: string | null,
 	date_created: string,
 };
 
 export type Platform = {
+	id: number,
+	name: string,
+	date_created: string,
+};
+
+export type Category = {
 	id: number,
 	name: string,
 	date_created: string,
@@ -40,6 +49,15 @@ export type TrackerUpdate = {
 	name?: string,
 	url?: string,
 	description?: string | null,
+	// Send back the exact string the API gave us to undo a check. null restores
+	// a tracker that had never been checked.
+	last_checked?: string | null,
+};
+
+// Unlike TrackerUpdate, null here is meaningful rather than just permitted:
+// null clears the subject's category, while omitting the key leaves it alone.
+export type SubjectUpdate = {
+	category_name?: string | null,
 };
 
 export async function getTrackers(): Promise<Tracker[]> {
@@ -77,6 +95,16 @@ export async function getPlatforms(): Promise<Platform[]> {
 	return response.data;
 }
 
+export async function getCategories(): Promise<Category[]> {
+	const response = await api.get<Category[]>('/categories/');
+	return response.data;
+}
+
+export async function updateSubject(id: number, data: SubjectUpdate): Promise<Subject> {
+	const response = await api.patch<Subject>(`/subjects/${id}`, data);
+	return response.data;
+}
+
 export async function createSubject(name: string): Promise<Subject> {
 	const response = await api.post<Subject>('/subjects/', { name });
 	return response.data;
@@ -84,6 +112,11 @@ export async function createSubject(name: string): Promise<Subject> {
 
 export async function createPlatform(name: string): Promise<Platform> {
 	const response = await api.post<Platform>('/platforms/', { name });
+	return response.data;
+}
+
+export async function createCategory(name: string): Promise<Category> {
+	const response = await api.post<Category>('/categories/', { name });
 	return response.data;
 }
 
@@ -100,6 +133,12 @@ export async function deleteSubject(id: number): Promise<void> {
 
 export async function deletePlatform(id: number): Promise<void> {
 	await api.delete(`/platforms/${id}`);
+}
+
+// 409s if any *subject* still points at the category — subjects are what use a
+// category, the way trackers are what use a subject.
+export async function deleteCategory(id: number): Promise<void> {
+	await api.delete(`/categories/${id}`);
 }
 
 export function isConflict(error: unknown): boolean {
