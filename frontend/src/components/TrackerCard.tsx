@@ -34,6 +34,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 	const [url, setUrl] = useState(tracker.url);
 	const [description, setDescription] = useState(tracker.description ?? '');
 	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 
 	function handleOpen() {
 		checkTracker(tracker.id)
@@ -42,7 +43,10 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 	}
 
 	function handleDelete() {
-		deleteTracker(tracker.id).then(() => onDeleted());
+		setError(null);
+		deleteTracker(tracker.id)
+			.then(() => onDeleted())
+			.catch(() => setError('Could not delete this tracker.'));
 	}
 
 	function startEditing() {
@@ -51,6 +55,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 		setName(tracker.name);
 		setUrl(tracker.url);
 		setDescription(tracker.description ?? '');
+		setError(null);
 		setEditing(true);
 	}
 
@@ -59,6 +64,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 		if (!name.trim() || !url.trim()) return;
 
 		setSaving(true);
+		setError(null);
 		updateTracker(tracker.id, {
 			name: name.trim(),
 			url: url.trim(),
@@ -68,6 +74,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 				setEditing(false);
 				onUpdated();
 			})
+			.catch(() => setError('Could not save changes.'))
 			.finally(() => setSaving(false));
 	}
 
@@ -96,6 +103,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 					placeholder="Description (optional)"
 					className={`${inputClass} mt-2`}
 				/>
+				{error && <p className="mt-2 text-sm text-red-500">{error}</p>}
 				<div className="mt-3 flex items-center gap-2">
 					<button
 						type="submit"
@@ -151,6 +159,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 					<CloseIcon />
 				</button>
 			</div>
+			{error && <p className="mt-2 text-sm text-red-500">{error}</p>}
 		</div>
 	);
 }

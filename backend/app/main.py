@@ -6,7 +6,17 @@ from fastapi.staticfiles import StaticFiles
 
 from .routes import router, subjects_router, platforms_router
 
-app = FastAPI()
+# /docs is not just a spec — it's a live console that can delete every tracker
+# from a web form. The app has no auth of its own, so if the reverse proxy in
+# front is ever misconfigured, an exposed /docs hands over the whole database.
+# Off in production; still available locally where it's genuinely useful.
+IS_PRODUCTION = os.getenv("ARTRACKER_ENV") == "production"
+
+app = FastAPI(
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
+)
 app.include_router(router)
 app.include_router(subjects_router)
 app.include_router(platforms_router)

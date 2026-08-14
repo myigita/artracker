@@ -35,7 +35,8 @@ COPY --from=frontend /build/dist ./frontend_dist
 # Where main.py looks for the built frontend, and where the SQLite file lives.
 # /data is a mount point so the database survives container rebuilds.
 ENV FRONTEND_DIST=/app/frontend_dist \
-    DATABASE_URL=sqlite:////data/artracker.db
+    DATABASE_URL=sqlite:////data/artracker.db \
+    ARTRACKER_ENV=production
 
 RUN mkdir -p /data
 

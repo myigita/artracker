@@ -242,13 +242,16 @@ def test_update_persists(client, subject, platform):
 def test_update_rejects_empty_name(client, subject, platform):
 	created = make_tracker(client, subject, platform).json()
 
-	assert client.patch(f"/api/trackers/{created['id']}", json={"name": ""}).status_code == 400
+	# 422, not 400: Pydantic's min_length rejects "" during request parsing,
+	# before the route's own check runs. The route's 400 now only covers an
+	# explicit JSON null — see test_update_rejects_explicit_null_name.
+	assert client.patch(f"/api/trackers/{created['id']}", json={"name": ""}).status_code == 422
 
 
 def test_update_rejects_empty_url(client, subject, platform):
 	created = make_tracker(client, subject, platform).json()
 
-	assert client.patch(f"/api/trackers/{created['id']}", json={"url": ""}).status_code == 400
+	assert client.patch(f"/api/trackers/{created['id']}", json={"url": ""}).status_code == 422
 
 
 def test_update_missing_tracker_404s(client):
@@ -261,3 +264,48 @@ def test_empty_patch_is_a_noop(client, subject, platform):
 	body = client.patch(f"/api/trackers/{created['id']}", json={}).json()
 
 	assert body["name"] == "Untouched"
+
+
+def test_create_rejects_oversized_field(client, subject, platform):
+	"""SQLite ignores VARCHAR lengths, so Pydantic is the only real bound.
+
+	Before max_length was added, a 100KB name was accepted with a 201 —
+	an unbounded write for anyone who can reach the API.
+	"""
+	response = make_tracker(client, subject, platform, name="A" * 100_000)
+
+	assert response.status_code == 422
+
+
+def test_create_rejects_empty_url(client, subject, platform):
+	"""POST used to accept url="" while PATCH rejected it — inconsistent."""
+	assert make_tracker(client, subject, platform, url="").status_code == 422
+
+
+def test_create_rejects_whitespace_only_name(client, subject, platform):
+	"""A whitespace name rendered as a blank card title in the UI."""
+	assert make_tracker(client, subject, platform, name="   ").status_code == 422
+
+
+def test_names_are_stripped(client, subject, platform):
+	body = make_tracker(client, subject, platform, name="  Padded  ").json()
+
+	assert body["name"] == "Padded"
+
+
+def test_update_rejects_whitespace_only_name(client, subject, platform):
+	created = make_tracker(client, subject, platform).json()
+
+	assert client.patch(
+		f"/api/trackers/{created['id']}", json={"name": "   "}
+	).status_code == 422
+
+
+def test_update_rejects_explicit_null_name(client, subject, platform):
+	"""Pydantic allows null (the field is Optional); the route must catch it,
+	or it writes NULL into a NOT NULL column and 500s."""
+	created = make_tracker(client, subject, platform).json()
+
+	assert client.patch(
+		f"/api/trackers/{created['id']}", json={"name": None}
+	).status_code == 400

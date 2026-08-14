@@ -33,25 +33,31 @@ export default function TrackerPanel() {
 	const [tab, setTab] = useState<Tab>('trackers');
 	const [openForm, setOpenForm] = useState<OpenForm>(null);
 	const [notice, setNotice] = useState<string | null>(null);
+	// "No trackers yet" and "couldn't reach the server" both render an empty
+	// list, so the empty state MUST be able to tell them apart — otherwise a
+	// dead backend looks exactly like a deleted database.
+	const [loading, setLoading] = useState(true);
+	const [loadError, setLoadError] = useState(false);
 
 	function fetchTrackers() {
-		getTrackers().then((data) => {
+		return getTrackers().then((data) => {
 			setTrackers(data);
 		});
 	}
 
 	function fetchSubjects() {
-		getSubjects().then(setSubjects).catch(() => {});
+		return getSubjects().then(setSubjects);
 	}
 
 	function fetchPlatforms() {
-		getPlatforms().then(setPlatforms).catch(() => {});
+		return getPlatforms().then(setPlatforms);
 	}
 
 	function fetchAll() {
-		fetchTrackers();
-		fetchSubjects();
-		fetchPlatforms();
+		setLoadError(false);
+		return Promise.all([fetchTrackers(), fetchSubjects(), fetchPlatforms()])
+			.catch(() => setLoadError(true))
+			.finally(() => setLoading(false));
 	}
 
 	useEffect(() => {
@@ -65,8 +71,7 @@ export default function TrackerPanel() {
 
 	function handleNameCreated(kind: string, name: string) {
 		setOpenForm(null);
-		fetchSubjects();
-		fetchPlatforms();
+		Promise.all([fetchSubjects(), fetchPlatforms()]).catch(() => setLoadError(true));
 		setNotice(`Added ${kind} “${name}”.`);
 	}
 
@@ -183,7 +188,30 @@ export default function TrackerPanel() {
 				/>
 			)}
 
-			{tab === 'trackers' && (
+			{loadError && (
+				<div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-sm text-[var(--text-h)]">
+					<p className="font-medium">Couldn’t reach the server.</p>
+					<p className="mt-1 text-[var(--text)]">
+						Your data is probably fine — this page just can’t load it right now.
+					</p>
+					<button
+						type="button"
+						onClick={() => {
+							setLoading(true);
+							fetchAll();
+						}}
+						className="mt-3 cursor-pointer rounded-md border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-h)] transition-colors hover:border-[var(--accent-border)]"
+					>
+						Retry
+					</button>
+				</div>
+			)}
+
+			{loading && !loadError && (
+				<p className="p-8 text-center text-sm text-[var(--text)]">Loading…</p>
+			)}
+
+			{!loading && !loadError && tab === 'trackers' && (
 				<>
 					<div className="flex flex-col gap-3">{cards}</div>
 					{trackers.length === 0 && openForm === null && (
@@ -194,7 +222,7 @@ export default function TrackerPanel() {
 				</>
 			)}
 
-			{tab === 'subjects' && (
+			{!loading && !loadError && tab === 'subjects' && (
 				<NameList
 					label="Subject"
 					items={subjects}
@@ -204,7 +232,7 @@ export default function TrackerPanel() {
 				/>
 			)}
 
-			{tab === 'platforms' && (
+			{!loading && !loadError && tab === 'platforms' && (
 				<NameList
 					label="Platform"
 					items={platforms}

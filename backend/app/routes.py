@@ -62,6 +62,10 @@ def update_tracker(tracker_id: int, tracker_update: TrackerUpdate, db: Session =
 	# only keys the client actually sent end up here.
 	changes = tracker_update.model_dump(exclude_unset=True)
 
+	# Pydantic's min_length already rejects "" and whitespace, but an explicit
+	# JSON null passes it (the fields are Optional) and would write NULL into a
+	# NOT NULL column — a 500. These turn that into a 400. description is
+	# excluded on purpose: nulling it is a legitimate way to clear it.
 	if "name" in changes and not changes["name"]:
 		raise HTTPException(status_code=400, detail="Name cannot be empty")
 	if "url" in changes and not changes["url"]:

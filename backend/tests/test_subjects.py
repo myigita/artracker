@@ -67,3 +67,17 @@ def test_cannot_delete_subject_still_in_use(client, subject, platform):
 	assert response.status_code == 409
 	assert "tracker" in response.json()["detail"].lower()
 	assert len(client.get("/api/subjects/").json()) == 1
+
+
+def test_create_rejects_oversized_name(client):
+	assert client.post("/api/subjects/", json={"name": "A" * 100_000}).status_code == 422
+
+
+def test_create_rejects_whitespace_only_name(client):
+	assert client.post("/api/subjects/", json={"name": "   "}).status_code == 422
+
+
+def test_name_is_stripped(client):
+	body = client.post("/api/subjects/", json={"name": "  Padded  "}).json()
+
+	assert body["name"] == "Padded"
