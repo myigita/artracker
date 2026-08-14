@@ -1,0 +1,38 @@
+# Cosmos-ready compose file.
+#
+# Differs from docker-compose.yml in two ways, both because Cosmos imports a
+# compose file without any access to this source tree:
+#
+#   1. `image:` instead of `build: .` — Cosmos has no build context, so the
+#      image must already exist on the host. Build it first:
+#          docker compose build
+#      (that tags artracker-artracker:latest), or explicitly:
+#          docker build -t artracker:latest .
+#
+#   2. No `ports:` — Cosmos reaches the container over the Docker network and
+#      terminates HTTPS itself, so nothing needs to be published on the host.
+#      `expose` advertises the port to other containers WITHOUT opening it on
+#      the host, which is exactly what a proxied service wants.
+#
+# After importing, in Cosmos: add a URL for this container on port 8000 and
+# ENABLE AUTHENTICATION on that route. The app has no login of its own — the
+# Cosmos auth gate is the only thing protecting the data.
+
+services:
+  artracker:
+    image: artracker-artracker:latest
+    expose:
+      - "8000"
+    volumes:
+      # The database. Without this, every rebuild silently wipes all trackers.
+      - artracker-data:/data
+    environment:
+      DATABASE_URL: sqlite:////data/artracker.db
+      FRONTEND_DIST: /app/frontend_dist
+      # Disables /docs, /redoc and /openapi.json — /docs is a live console that
+      # can delete everything, so it must not be reachable in production.
+      ARTRACKER_ENV: production
+    restart: unless-stopped
+
+volumes:
+  artracker-data:
