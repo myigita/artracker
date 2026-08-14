@@ -1,17 +1,36 @@
 import { useState, useEffect } from 'react';
-import type { Tracker } from '../api';
-import { getTrackers, createSubject, createPlatform } from '../api';
+import type { Tracker, Subject, Platform } from '../api';
+import {
+	getTrackers,
+	getSubjects,
+	getPlatforms,
+	createSubject,
+	createPlatform,
+	deleteSubject,
+	deletePlatform,
+} from '../api';
 import TrackerCard from './TrackerCard';
 import AddTrackerForm from './AddTrackerForm';
 import AddNameForm from './AddNameForm';
+import NameList from './NameList';
 
 // Only one form is open at a time, so a single value beats three booleans —
 // it makes "these are mutually exclusive" true by construction.
 type OpenForm = 'tracker' | 'subject' | 'platform' | null;
+type Tab = 'trackers' | 'subjects' | 'platforms';
+
+const TABS: { id: Tab; label: string }[] = [
+	{ id: 'trackers', label: 'Trackers' },
+	{ id: 'subjects', label: 'Subjects' },
+	{ id: 'platforms', label: 'Platforms' },
+];
 
 export default function TrackerPanel() {
 
 	const [trackers, setTrackers] = useState<Tracker[]>([]);
+	const [subjects, setSubjects] = useState<Subject[]>([]);
+	const [platforms, setPlatforms] = useState<Platform[]>([]);
+	const [tab, setTab] = useState<Tab>('trackers');
 	const [openForm, setOpenForm] = useState<OpenForm>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 
@@ -21,20 +40,44 @@ export default function TrackerPanel() {
 		});
 	}
 
-	useEffect(() => {
+	function fetchSubjects() {
+		getSubjects().then(setSubjects).catch(() => {});
+	}
+
+	function fetchPlatforms() {
+		getPlatforms().then(setPlatforms).catch(() => {});
+	}
+
+	function fetchAll() {
 		fetchTrackers();
+		fetchSubjects();
+		fetchPlatforms();
+	}
+
+	useEffect(() => {
+		fetchAll();
 	}, []);
 
 	function handleAdded() {
 		setOpenForm(null);
-		fetchTrackers();
+		fetchAll();
 	}
 
 	function handleNameCreated(kind: string, name: string) {
 		setOpenForm(null);
-		// No refetch needed — trackers are unaffected. The tracker form picks up
-		// the new option because it refetches its dropdowns when it opens.
+		fetchSubjects();
+		fetchPlatforms();
 		setNotice(`Added ${kind} “${name}”.`);
+	}
+
+	// Trackers carry subject_name/platform_name, so usage counts come straight
+	// off the list already in state — no extra endpoint needed.
+	function subjectUsage(name: string) {
+		return trackers.filter((t) => t.subject_name === name).length;
+	}
+
+	function platformUsage(name: string) {
+		return trackers.filter((t) => t.platform_name === name).length;
 	}
 
 	function openFormAndClearNotice(form: OpenForm) {
@@ -44,6 +87,25 @@ export default function TrackerPanel() {
 
 	const buttonClass =
 		'cursor-pointer rounded-md px-3 py-2 text-sm font-medium transition-opacity hover:opacity-90';
+
+	const counts: Record<Tab, number> = {
+		trackers: trackers.length,
+		subjects: subjects.length,
+		platforms: platforms.length,
+	};
+
+	// The "+ Add" button follows whichever tab you're on.
+	const addFormFor: Record<Tab, OpenForm> = {
+		trackers: 'tracker',
+		subjects: 'subject',
+		platforms: 'platform',
+	};
+
+	const addLabel: Record<Tab, string> = {
+		trackers: '+ Add tracker',
+		subjects: '+ Add subject',
+		platforms: '+ Add platform',
+	};
 
 	const cards = trackers.map((tracker) => (
 		<TrackerCard
@@ -58,33 +120,38 @@ export default function TrackerPanel() {
 	return (
 		<div className="mx-auto max-w-2xl p-6">
 			<div className="mb-4 flex flex-wrap items-center gap-2">
-				<h2 className="mr-auto text-2xl font-semibold text-[var(--text-h)]">
-					Trackers <span className="text-base font-normal text-[var(--text)]">({trackers.length})</span>
-				</h2>
+				<div className="mr-auto flex gap-1" role="tablist">
+					{TABS.map(({ id, label }) => (
+						<button
+							key={id}
+							type="button"
+							role="tab"
+							aria-selected={tab === id}
+							onClick={() => {
+								setTab(id);
+								setOpenForm(null);
+								setNotice(null);
+							}}
+							className={`cursor-pointer rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+								tab === id
+									? 'bg-[var(--accent-bg)] text-[var(--text-h)]'
+									: 'text-[var(--text)] hover:text-[var(--text-h)]'
+							}`}
+						>
+							{label}{' '}
+							<span className="text-xs font-normal">({counts[id]})</span>
+						</button>
+					))}
+				</div>
+
 				{openForm === null && (
-					<>
-						<button
-							type="button"
-							onClick={() => openFormAndClearNotice('subject')}
-							className={`${buttonClass} border border-[var(--border)] text-[var(--text)] hover:text-[var(--text-h)]`}
-						>
-							+ Subject
-						</button>
-						<button
-							type="button"
-							onClick={() => openFormAndClearNotice('platform')}
-							className={`${buttonClass} border border-[var(--border)] text-[var(--text)] hover:text-[var(--text-h)]`}
-						>
-							+ Platform
-						</button>
-						<button
-							type="button"
-							onClick={() => openFormAndClearNotice('tracker')}
-							className={`${buttonClass} bg-[var(--accent)] text-white`}
-						>
-							+ Add tracker
-						</button>
-					</>
+					<button
+						type="button"
+						onClick={() => openFormAndClearNotice(addFormFor[tab])}
+						className={`${buttonClass} bg-[var(--accent)] text-white`}
+					>
+						{addLabel[tab]}
+					</button>
 				)}
 			</div>
 
@@ -116,14 +183,35 @@ export default function TrackerPanel() {
 				/>
 			)}
 
-			<div className="flex flex-col gap-3">
-				{cards}
-			</div>
+			{tab === 'trackers' && (
+				<>
+					<div className="flex flex-col gap-3">{cards}</div>
+					{trackers.length === 0 && openForm === null && (
+						<p className="rounded-lg border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--text)]">
+							No trackers yet — add your first one to get started.
+						</p>
+					)}
+				</>
+			)}
 
-			{trackers.length === 0 && openForm === null && (
-				<p className="rounded-lg border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--text)]">
-					No trackers yet — add your first one to get started.
-				</p>
+			{tab === 'subjects' && (
+				<NameList
+					label="Subject"
+					items={subjects}
+					usageCount={subjectUsage}
+					onDelete={deleteSubject}
+					onDeleted={fetchSubjects}
+				/>
+			)}
+
+			{tab === 'platforms' && (
+				<NameList
+					label="Platform"
+					items={platforms}
+					usageCount={platformUsage}
+					onDelete={deletePlatform}
+					onDeleted={fetchPlatforms}
+				/>
 			)}
 		</div>
 	);

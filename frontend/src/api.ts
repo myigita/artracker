@@ -91,6 +91,17 @@ export async function createPlatform(name: string): Promise<Platform> {
 // depends on intent: pressing "Add subject" and being told it exists is
 // useful feedback, but the tracker form only needs the name to EXIST — it
 // doesn't care who created it. Hence two flavours.
+// These return 204 No Content — there's no body to parse, hence no <T> and
+// no `return response.data` (unlike deleteTracker, which returns the row).
+// They 409 if any tracker still references the subject/platform.
+export async function deleteSubject(id: number): Promise<void> {
+	await api.delete(`/subjects/${id}`);
+}
+
+export async function deletePlatform(id: number): Promise<void> {
+	await api.delete(`/platforms/${id}`);
+}
+
 export function isConflict(error: unknown): boolean {
 	return axios.isAxiosError(error) && error.response?.status === 409;
 }
