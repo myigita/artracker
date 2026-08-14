@@ -41,6 +41,11 @@ class TrackerIn(BaseModel):
     url: str
     description: str | None = None
 
+class TrackerUpdate(BaseModel):
+    name: str | None = None
+    url: str | None = None
+    description: str | None = None
+
 class TrackerOut(BaseModel):
     id: int
     name: str

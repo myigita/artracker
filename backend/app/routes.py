@@ -5,6 +5,7 @@ from .models import Subject, Tracker, Platform, utcnow
 from .schemas import (
 	TrackerIn,
 	TrackerOut,
+	TrackerUpdate,
 	SubjectIn,
 	SubjectOut,
 	PlatformIn,
@@ -48,6 +49,27 @@ def create_tracker(tracker_in: TrackerIn, db: Session = Depends(get_db)):
 		description=tracker_in.description
 	)
 	db.add(tracker)
+	db.commit()
+	return tracker
+
+@router.patch("/{tracker_id}", response_model=TrackerOut)
+def update_tracker(tracker_id: int, tracker_update: TrackerUpdate, db: Session = Depends(get_db)):
+	tracker = db.query(Tracker).filter(Tracker.id == tracker_id).first()
+	if not tracker:
+		raise HTTPException(status_code=404, detail="Tracker not found")
+
+	# exclude_unset keeps "field omitted" distinct from "field set to null":
+	# only keys the client actually sent end up here.
+	changes = tracker_update.model_dump(exclude_unset=True)
+
+	if "name" in changes and not changes["name"]:
+		raise HTTPException(status_code=400, detail="Name cannot be empty")
+	if "url" in changes and not changes["url"]:
+		raise HTTPException(status_code=400, detail="URL cannot be empty")
+
+	for field, value in changes.items():
+		setattr(tracker, field, value)
+
 	db.commit()
 	return tracker
 

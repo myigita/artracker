@@ -185,3 +185,79 @@ def test_last_checked_is_actually_now_in_utc(client, subject, platform):
 	drift = abs((datetime.now(timezone.utc) - parsed).total_seconds())
 
 	assert drift < 10, f"last_checked is {drift}s from now — wrong timezone?"
+
+
+def test_update_tracker_changes_only_sent_fields(client, subject, platform):
+	"""PATCH must leave omitted fields alone — not null them out.
+
+	This is what `exclude_unset=True` buys: a form that only submits `url`
+	must not wipe the tracker's name and description.
+	"""
+	created = make_tracker(client, subject, platform, name="Original", description="Original desc").json()
+
+	response = client.patch(
+		f"/api/trackers/{created['id']}",
+		json={"url": "https://example.test/updated"},
+	)
+
+	assert response.status_code == 200
+	body = response.json()
+	assert body["url"] == "https://example.test/updated"
+	assert body["name"] == "Original"
+	assert body["description"] == "Original desc"
+
+
+def test_update_can_set_description_to_null(client, subject, platform):
+	"""Explicit null must differ from omission — clearing a field has to work."""
+	created = make_tracker(client, subject, platform, description="Original desc").json()
+
+	body = client.patch(
+		f"/api/trackers/{created['id']}", json={"description": None}
+	).json()
+
+	assert body["description"] is None
+
+
+def test_update_multiple_fields(client, subject, platform):
+	created = make_tracker(client, subject, platform).json()
+
+	body = client.patch(
+		f"/api/trackers/{created['id']}",
+		json={"name": "New name", "url": "https://example.test/new", "description": "New desc"},
+	).json()
+
+	assert body["name"] == "New name"
+	assert body["url"] == "https://example.test/new"
+	assert body["description"] == "New desc"
+
+
+def test_update_persists(client, subject, platform):
+	"""The change must survive the request, not just echo back."""
+	created = make_tracker(client, subject, platform).json()
+	client.patch(f"/api/trackers/{created['id']}", json={"name": "Persisted"})
+
+	assert client.get(f"/api/trackers/{created['id']}").json()["name"] == "Persisted"
+
+
+def test_update_rejects_empty_name(client, subject, platform):
+	created = make_tracker(client, subject, platform).json()
+
+	assert client.patch(f"/api/trackers/{created['id']}", json={"name": ""}).status_code == 400
+
+
+def test_update_rejects_empty_url(client, subject, platform):
+	created = make_tracker(client, subject, platform).json()
+
+	assert client.patch(f"/api/trackers/{created['id']}", json={"url": ""}).status_code == 400
+
+
+def test_update_missing_tracker_404s(client):
+	assert client.patch("/api/trackers/999999", json={"name": "x"}).status_code == 404
+
+
+def test_empty_patch_is_a_noop(client, subject, platform):
+	created = make_tracker(client, subject, platform, name="Untouched").json()
+
+	body = client.patch(f"/api/trackers/{created['id']}", json={}).json()
+
+	assert body["name"] == "Untouched"
