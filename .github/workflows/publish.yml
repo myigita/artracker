@@ -1,0 +1,95 @@
+# Builds the Docker image on every push to main and publishes it to GHCR, so
+# the deployed container can be updated by pulling instead of rebuilding by
+# hand on the host.
+#
+# The image lands at ghcr.io/myigita/artracker:latest. It must be made PUBLIC
+# once (Packages -> artracker -> Package settings -> Change visibility) or
+# Cosmos will need registry credentials to pull it.
+
+name: Publish image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # lets you trigger a rebuild by hand from the Actions tab
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Gate the publish on the test suite — a broken image shouldn't be
+  # deployable just because it compiled.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend deps
+        working-directory: backend
+        run: pip install -r requirements-dev.txt
+
+      - name: Run backend tests
+        working-directory: backend
+        run: pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck and lint
+        working-directory: frontend
+        run: |
+          npx tsc -b
+          npm run lint
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # required for pushing to GHCR
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # Provided automatically by Actions — no secret to configure.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Reuse layers between runs so repeat builds don't reinstall
+          # every dependency from scratch.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
