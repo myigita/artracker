@@ -2,7 +2,17 @@ services:
   artracker:
     build: .
     ports:
-      - "8000:8000"
+      # Bound to loopback ON PURPOSE. The app has no authentication of its own,
+      # so anything that can reach this port has full read/write/delete access
+      # to every tracker. Publishing it as "8000:8000" would listen on all
+      # interfaces and let the public internet reach it directly, bypassing
+      # whatever auth the reverse proxy in front is enforcing.
+      #
+      # Local dev: http://localhost:8000 still works.
+      # Behind a proxy (Cosmos/Caddy/nginx): point the route at 127.0.0.1:8000,
+      # or drop this block entirely and route to the container over a shared
+      # Docker network instead.
+      - "127.0.0.1:8000:8000"
     volumes:
       # THE important line. artracker.db lives at /data inside the container;
       # without this named volume the database is part of the container
