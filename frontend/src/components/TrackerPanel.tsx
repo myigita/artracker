@@ -22,10 +22,11 @@ export default function TrackerPanel() {
 	));
 
 	return (
-		<div className="tracker-panel">
-			<h2>Trackers</h2>
-			<p>Length of trackers: {trackers.length}</p>
-			<div className="tracker-cards">
+		<div className="mx-auto max-w-2xl p-6">
+			<h2 className="mb-4 text-2xl font-semibold text-[var(--text-h)]">
+				Trackers <span className="text-base font-normal text-[var(--text)]">({trackers.length})</span>
+			</h2>
+			<div className="flex flex-col gap-3">
 				{cards}
 			</div>
 		</div>
