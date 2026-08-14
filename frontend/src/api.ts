@@ -18,8 +18,12 @@ export async function getTrackers(): Promise<Tracker[]> {
 	return response.data;
 }
 
-// Item routes take no trailing slash (collection routes do).
 export async function checkTracker(id: number): Promise<Tracker> {
 	const response = await api.post<Tracker>(`/trackers/${id}/check`);
+	return response.data;
+}
+
+export async function deleteTracker(id: number): Promise<Tracker> {
+	const response = await api.delete<Tracker>(`/trackers/${id}`);
 	return response.data;
 }
