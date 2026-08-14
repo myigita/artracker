@@ -22,8 +22,8 @@ dist/
 .idea/
 .DS_Store
 
-# Claude Code local settings
-.claude/settings.local.json
+# Claude Code local settings and dev-server launcher
+.claude/
 
 # Local-only project notes
 CLAUDE.md
