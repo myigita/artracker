@@ -10,7 +10,10 @@ name: Publish image
 
 on:
   push:
-    branches: [main]
+    # `beta` is the deployed branch, not `main` — see the branch note in
+    # CLAUDE.md. main is the owner's hand-written learning branch and is
+    # deliberately behind; publishing from it would ship the wrong code.
+    branches: [beta]
   workflow_dispatch: # lets you trigger a rebuild by hand from the Actions tab
 
 env:
