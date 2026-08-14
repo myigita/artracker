@@ -18,7 +18,7 @@ export default function TrackerPanel() {
 	}, []);
 
 	const cards = trackers.map((tracker) => (
-		<TrackerCard key={tracker.id} tracker={tracker} />
+		<TrackerCard key={tracker.id} tracker={tracker} onChecked={fetchTrackers} />
 	));
 
 	return (
