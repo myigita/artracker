@@ -1,0 +1,21 @@
+# Keep the build context small and avoid copying host-specific junk into the
+# image. node_modules and .venv especially — they're large and platform-specific,
+# and both get reinstalled inside the image anyway.
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+**/dist
+**/.git
+**/.gitignore
+
+# Never bake a local database into the image; it belongs on the volume.
+**/*.db
+
+**/.env
+**/.env.local
+**/.DS_Store
+**/.oxlintrc.json
+CLAUDE.md
+LICENSE
+README.md

@@ -1,0 +1,14 @@
+services:
+  artracker:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # THE important line. artracker.db lives at /data inside the container;
+      # without this named volume the database is part of the container
+      # filesystem and every rebuild silently wipes all trackers.
+      - artracker-data:/data
+    restart: unless-stopped
+
+volumes:
+  artracker-data:
