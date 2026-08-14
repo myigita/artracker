@@ -77,18 +77,33 @@ export async function getPlatforms(): Promise<Platform[]> {
 	return response.data;
 }
 
-// The backend 409s when the name already exists. For our purposes that's a
-// success — we only care that a subject/platform by this name exists after
-// the call, not that we were the one to create it.
+export async function createSubject(name: string): Promise<Subject> {
+	const response = await api.post<Subject>('/subjects/', { name });
+	return response.data;
+}
+
+export async function createPlatform(name: string): Promise<Platform> {
+	const response = await api.post<Platform>('/platforms/', { name });
+	return response.data;
+}
+
+// The backend 409s when the name already exists. Whether that's an error
+// depends on intent: pressing "Add subject" and being told it exists is
+// useful feedback, but the tracker form only needs the name to EXIST — it
+// doesn't care who created it. Hence two flavours.
+export function isConflict(error: unknown): boolean {
+	return axios.isAxiosError(error) && error.response?.status === 409;
+}
+
 function ignoreConflict(error: unknown): void {
-	if (axios.isAxiosError(error) && error.response?.status === 409) return;
+	if (isConflict(error)) return;
 	throw error;
 }
 
 export async function ensureSubject(name: string): Promise<void> {
-	await api.post('/subjects/', { name }).catch(ignoreConflict);
+	await createSubject(name).catch(ignoreConflict);
 }
 
 export async function ensurePlatform(name: string): Promise<void> {
-	await api.post('/platforms/', { name }).catch(ignoreConflict);
+	await createPlatform(name).catch(ignoreConflict);
 }
