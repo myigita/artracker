@@ -141,6 +141,39 @@ export async function deleteCategory(id: number): Promise<void> {
 	await api.delete(`/categories/${id}`);
 }
 
+// ---- Backup / restore ------------------------------------------------------
+
+export type ImportMode = 'merge' | 'replace';
+
+export type ImportResult = {
+	mode: ImportMode,
+	categories_added: number,
+	platforms_added: number,
+	subjects_added: number,
+	trackers_added: number,
+	skipped: number,
+	deleted: number,
+};
+
+export async function exportBackup(): Promise<unknown> {
+	const response = await api.get('/backup/export');
+	return response.data;
+}
+
+// The payload is whatever was in the file the user picked, so it stays
+// `unknown` here rather than being asserted into a shape we haven't checked.
+// The backend validates it and 422s on anything malformed.
+export async function importBackup(data: unknown, mode: ImportMode): Promise<ImportResult> {
+	const response = await api.post<ImportResult>('/backup/import', data, { params: { mode } });
+	return response.data;
+}
+
+export function errorDetail(error: unknown): string | null {
+	if (!axios.isAxiosError(error)) return null;
+	const detail = error.response?.data?.detail;
+	return typeof detail === 'string' ? detail : null;
+}
+
 export function isConflict(error: unknown): boolean {
 	return axios.isAxiosError(error) && error.response?.status === 409;
 }

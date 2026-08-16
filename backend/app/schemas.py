@@ -1,5 +1,6 @@
 from pydantic import AfterValidator, BaseModel, Field, PlainSerializer
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Annotated
 
 
@@ -29,6 +30,15 @@ def _to_naive_utc(dt: datetime) -> datetime:
 
 
 NaiveUtcDatetime = Annotated[datetime, AfterValidator(_to_naive_utc)]
+
+# A backup document is both written and read, so its timestamps need BOTH
+# directions: parsed down to naive UTC coming in, re-marked as UTC going out.
+# That's what lets one set of models serve export and import.
+BackupDatetime = Annotated[
+    datetime,
+    AfterValidator(_to_naive_utc),
+    PlainSerializer(_serialize_utc, return_type=str, when_used="json"),
+]
 
 # Length limits live HERE, not in models.py. The `String(255)` columns look like
 # constraints but SQLite ignores VARCHAR lengths entirely — a 100KB name was
@@ -121,3 +131,77 @@ class TrackerOut(BaseModel):
     last_checked: UtcDatetime | None
 
     model_config = {"from_attributes": True}
+
+
+# ---- Backup / restore ------------------------------------------------------
+#
+# Rows reference each other BY NAME, not by id. Names are already unique on all
+# three lookup tables, the file stays readable, and it means the same document
+# works for a merge into a database whose ids are completely different. Nothing
+# outside the DB depends on the ids, so they're simply not exported.
+
+BACKUP_VERSION = 1
+
+_FROM_ORM = {"from_attributes": True}
+
+
+class CategoryBackup(BaseModel):
+    model_config = _FROM_ORM
+
+    name: Name
+    date_created: BackupDatetime | None = None
+
+
+class PlatformBackup(BaseModel):
+    model_config = _FROM_ORM
+
+    name: Name
+    date_created: BackupDatetime | None = None
+
+
+class SubjectBackup(BaseModel):
+    model_config = _FROM_ORM
+
+    name: Name
+    category_name: Name | None = None
+    date_created: BackupDatetime | None = None
+
+
+class TrackerBackup(BaseModel):
+    model_config = _FROM_ORM
+
+    name: Name
+    subject_name: Name
+    platform_name: Name
+    url: Url
+    description: Description | None = None
+    date_created: BackupDatetime | None = None
+    last_checked: BackupDatetime | None = None
+
+
+class Backup(BaseModel):
+    model_config = _FROM_ORM
+
+    version: int = BACKUP_VERSION
+    exported_at: BackupDatetime | None = None
+    categories: list[CategoryBackup] = []
+    platforms: list[PlatformBackup] = []
+    subjects: list[SubjectBackup] = []
+    trackers: list[TrackerBackup] = []
+
+
+class ImportMode(str, Enum):
+    # Add what's missing, leave everything already here alone.
+    merge = "merge"
+    # Wipe first, then restore the file exactly. A real "restore from backup".
+    replace = "replace"
+
+
+class ImportResult(BaseModel):
+    mode: ImportMode
+    categories_added: int
+    platforms_added: int
+    subjects_added: int
+    trackers_added: int
+    skipped: int
+    deleted: int

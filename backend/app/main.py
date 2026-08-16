@@ -4,7 +4,13 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from .routes import router, subjects_router, platforms_router, categories_router
+from .routes import (
+    router,
+    subjects_router,
+    platforms_router,
+    categories_router,
+    backup_router,
+)
 
 # /docs is not just a spec — it's a live console that can delete every tracker
 # from a web form. The app has no auth of its own, so if the reverse proxy in
@@ -21,6 +27,7 @@ app.include_router(router)
 app.include_router(subjects_router)
 app.include_router(platforms_router)
 app.include_router(categories_router)
+app.include_router(backup_router)
 
 # In production the React app is built to static files and served by this same
 # process, so there's one origin and no CORS/proxy. In development we skip this

@@ -13,6 +13,14 @@ from .schemas import (
 	PlatformOut,
 	CategoryIn,
 	CategoryOut,
+	Backup,
+	BACKUP_VERSION,
+	CategoryBackup,
+	PlatformBackup,
+	SubjectBackup,
+	TrackerBackup,
+	ImportMode,
+	ImportResult,
 )
 from sqlalchemy.orm import Session
 
@@ -20,6 +28,7 @@ router = APIRouter(prefix="/api/trackers")
 subjects_router = APIRouter(prefix="/api/subjects")
 platforms_router = APIRouter(prefix="/api/platforms")
 categories_router = APIRouter(prefix="/api/categories")
+backup_router = APIRouter(prefix="/api/backup")
 
 @router.get("/", response_model=list[TrackerOut])
 def get_trackers(db: Session = Depends(get_db)):
@@ -228,3 +237,128 @@ def delete_category(category_id: int, db: Session = Depends(get_db)):
 
 	db.delete(category)
 	db.commit()
+
+@backup_router.get("/export", response_model=Backup)
+def export_backup(db: Session = Depends(get_db)):
+	return Backup(
+		version=BACKUP_VERSION,
+		exported_at=utcnow(),
+		categories=[CategoryBackup.model_validate(c) for c in db.query(Category).order_by(Category.name)],
+		platforms=[PlatformBackup.model_validate(p) for p in db.query(Platform).order_by(Platform.name)],
+		subjects=[SubjectBackup.model_validate(s) for s in db.query(Subject).order_by(Subject.name)],
+		trackers=[TrackerBackup.model_validate(t) for t in db.query(Tracker).order_by(Tracker.date_created)],
+	)
+
+@backup_router.post("/import", response_model=ImportResult)
+def import_backup(
+	payload: Backup,
+	mode: ImportMode = ImportMode.merge,
+	db: Session = Depends(get_db),
+):
+	if payload.version != BACKUP_VERSION:
+		raise HTTPException(
+			status_code=400,
+			detail=f"Unsupported backup version {payload.version}; this app reads version {BACKUP_VERSION}",
+		)
+
+	deleted = 0
+	if mode is ImportMode.replace:
+		# Children first — SQLite isn't enforcing the foreign keys, but deleting
+		# in dependency order keeps the intent readable and stays correct if
+		# PRAGMA foreign_keys is ever turned on.
+		for model in (Tracker, Subject, Platform, Category):
+			deleted += db.query(model).delete()
+
+	# Everything below works off these in-memory maps rather than re-querying,
+	# because SessionLocal sets autoflush=False: a Category added moments ago is
+	# NOT visible to a db.query() until flush, so a lookup would miss it and
+	# create a duplicate.
+	categories = {c.name: c for c in db.query(Category).all()}
+	platforms = {p.name: p for p in db.query(Platform).all()}
+	subjects = {s.name: s for s in db.query(Subject).all()}
+	tracker_urls = {t.url for t in db.query(Tracker).all()}
+
+	added = {"categories": 0, "platforms": 0, "subjects": 0, "trackers": 0}
+	skipped = 0
+
+	for item in payload.categories:
+		if item.name in categories:
+			skipped += 1
+			continue
+		categories[item.name] = Category(
+			name=item.name, date_created=item.date_created or utcnow()
+		)
+		db.add(categories[item.name])
+		added["categories"] += 1
+
+	for item in payload.platforms:
+		if item.name in platforms:
+			skipped += 1
+			continue
+		platforms[item.name] = Platform(
+			name=item.name, date_created=item.date_created or utcnow()
+		)
+		db.add(platforms[item.name])
+		added["platforms"] += 1
+
+	for item in payload.subjects:
+		if item.name in subjects:
+			skipped += 1
+			continue
+		category = None
+		if item.category_name:
+			category = categories.get(item.category_name)
+			if category is None:
+				# Nothing has been committed yet, so raising here leaves the
+				# database exactly as it was — including the replace-mode deletes.
+				raise HTTPException(
+					status_code=400,
+					detail=f"Subject '{item.name}' references unknown category '{item.category_name}'",
+				)
+		subjects[item.name] = Subject(
+			name=item.name, category=category, date_created=item.date_created or utcnow()
+		)
+		db.add(subjects[item.name])
+		added["subjects"] += 1
+
+	for item in payload.trackers:
+		# URL is the identity for merge purposes: it's what actually names the
+		# destination, and tracker names are not unique.
+		if item.url in tracker_urls:
+			skipped += 1
+			continue
+		subject = subjects.get(item.subject_name)
+		if subject is None:
+			raise HTTPException(
+				status_code=400,
+				detail=f"Tracker '{item.name}' references unknown subject '{item.subject_name}'",
+			)
+		platform = platforms.get(item.platform_name)
+		if platform is None:
+			raise HTTPException(
+				status_code=400,
+				detail=f"Tracker '{item.name}' references unknown platform '{item.platform_name}'",
+			)
+		db.add(Tracker(
+			name=item.name,
+			subject=subject,
+			platform=platform,
+			url=item.url,
+			description=item.description,
+			date_created=item.date_created or utcnow(),
+			last_checked=item.last_checked,
+		))
+		tracker_urls.add(item.url)
+		added["trackers"] += 1
+
+	db.commit()
+
+	return ImportResult(
+		mode=mode,
+		categories_added=added["categories"],
+		platforms_added=added["platforms"],
+		subjects_added=added["subjects"],
+		trackers_added=added["trackers"],
+		skipped=skipped,
+		deleted=deleted,
+	)

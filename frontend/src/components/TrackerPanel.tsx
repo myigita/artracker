@@ -17,17 +17,19 @@ import AddTrackerForm from './AddTrackerForm';
 import AddNameForm from './AddNameForm';
 import NameList from './NameList';
 import SubjectCategorySelect from './SubjectCategorySelect';
+import BackupPanel from './BackupPanel';
 
 // Only one form is open at a time, so a single value beats four booleans —
 // it makes "these are mutually exclusive" true by construction.
 type OpenForm = 'tracker' | 'subject' | 'platform' | 'category' | null;
-type Tab = 'trackers' | 'subjects' | 'platforms' | 'categories';
+type Tab = 'trackers' | 'subjects' | 'platforms' | 'categories' | 'backup';
 
 const TABS: { id: Tab; label: string }[] = [
 	{ id: 'trackers', label: 'Trackers' },
 	{ id: 'subjects', label: 'Subjects' },
 	{ id: 'platforms', label: 'Platforms' },
 	{ id: 'categories', label: 'Categories' },
+	{ id: 'backup', label: 'Backup' },
 ];
 
 export default function TrackerPanel() {
@@ -115,19 +117,22 @@ export default function TrackerPanel() {
 	const buttonClass =
 		'cursor-pointer rounded-md px-3 py-2 text-sm font-medium transition-opacity hover:opacity-90';
 
-	const counts: Record<Tab, number> = {
+	// null means "no count to show" — Backup is a pair of actions, not a list.
+	const counts: Record<Tab, number | null> = {
 		trackers: trackers.length,
 		subjects: subjects.length,
 		platforms: platforms.length,
 		categories: categories.length,
+		backup: null,
 	};
 
-	// The "+ Add" button follows whichever tab you're on.
+	// The "+ Add" button follows whichever tab you're on; null hides it.
 	const addFormFor: Record<Tab, OpenForm> = {
 		trackers: 'tracker',
 		subjects: 'subject',
 		platforms: 'platform',
 		categories: 'category',
+		backup: null,
 	};
 
 	const addLabel: Record<Tab, string> = {
@@ -135,6 +140,7 @@ export default function TrackerPanel() {
 		subjects: '+ Add subject',
 		platforms: '+ Add platform',
 		categories: '+ Add category',
+		backup: '',
 	};
 
 	const cards = trackers.map((tracker) => (
@@ -168,13 +174,15 @@ export default function TrackerPanel() {
 									: 'text-[var(--text)] hover:text-[var(--text-h)]'
 							}`}
 						>
-							{label}{' '}
-							<span className="text-xs font-normal">({counts[id]})</span>
+							{label}
+							{counts[id] !== null && (
+								<span className="text-xs font-normal"> ({counts[id]})</span>
+							)}
 						</button>
 					))}
 				</div>
 
-				{openForm === null && (
+				{openForm === null && addFormFor[tab] !== null && (
 					<button
 						type="button"
 						onClick={() => openFormAndClearNotice(addFormFor[tab])}
@@ -281,6 +289,10 @@ export default function TrackerPanel() {
 					onDelete={deletePlatform}
 					onDeleted={fetchPlatforms}
 				/>
+			)}
+
+			{!loading && !loadError && tab === 'backup' && (
+				<BackupPanel onImported={fetchAll} />
 			)}
 
 			{!loading && !loadError && tab === 'categories' && (
