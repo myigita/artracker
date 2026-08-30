@@ -1,19 +1,26 @@
-# Builds the Docker image on every push to main and publishes it to GHCR, so
-# the deployed container can be updated by pulling instead of rebuilding by
-# hand on the host.
+# Runs the test suite on every pull request, and on pushes to the two long-lived
+# branches also builds a Docker image and publishes it to GHCR — so the deployed
+# container is updated by pulling instead of rebuilding by hand on the host.
 #
-# The image lands at ghcr.io/myigita/artracker:latest. It must be made PUBLIC
-# once (Packages -> artracker -> Package settings -> Change visibility) or
-# Cosmos will need registry credentials to pull it.
+# Which tag you get depends on the branch (see the branch note in CLAUDE.md):
+#
+#   main -> :latest   stable, and what the VPS pulls
+#   beta -> :beta     integration, for testing a change before promoting it
+#
+# Both also get a short-sha tag. The package must be made PUBLIC once by hand
+# (Packages -> artracker -> Package settings -> Change visibility) or Cosmos
+# needs registry credentials to pull it.
 
 name: Publish image
 
 on:
   push:
-    # `beta` is the deployed branch, not `main` — see the branch note in
-    # CLAUDE.md. main is the owner's hand-written learning branch and is
-    # deliberately behind; publishing from it would ship the wrong code.
-    branches: [beta]
+    branches: [main, beta]
+  # Tests run on PRs too, but nothing is published from one. Without this a PR
+  # carries no signal at all and "merge once it's green" has nothing to be
+  # green — the whole point of merging into beta before main.
+  pull_request:
+    branches: [main, beta]
   workflow_dispatch: # lets you trigger a rebuild by hand from the Actions tab
 
 env:
@@ -58,6 +65,9 @@ jobs:
 
   publish:
     needs: test
+    # Pull requests get the tests above and stop there. Publishing from a PR
+    # would let an unmerged branch overwrite a tag the VPS pulls.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -81,8 +91,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # One tag per branch role, so promoting beta to main is what moves
+          # :latest — never a beta build. The sha tag is on both, and is the
+          # only way back to a specific build once a moving tag advances.
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=beta,enable=${{ github.ref == 'refs/heads/beta' }}
             type=sha,format=short
 
       - name: Build and push

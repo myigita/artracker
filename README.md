@@ -7,9 +7,10 @@ hand gets old fast. Artracker is one page that lists every artist–platform pai
 you care about. Click **Open**, it opens the link and stamps the time — so the
 list always tells you where you're behind.
 
-It's a link manager with a memory, not a scraper. Most art platforms don't
-allow anonymous reads (see [CLAUDE.md](CLAUDE.md) for the per-platform
-research), so the timestamps come from your own clicks.
+It's a link manager with a memory, not a scraper. Of the platforms worth
+following, only Bluesky and Danbooru can be read anonymously — the rest need
+credentials a fan-built tool has no way to get — so the timestamps come from
+your own clicks rather than from polling.
 
 ## What's in it
 
