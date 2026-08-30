@@ -10,6 +10,7 @@ from .routes import (
     platforms_router,
     categories_router,
     backup_router,
+    mail_router,
 )
 
 # /docs is not just a spec — it's a live console that can delete every tracker
@@ -28,6 +29,7 @@ app.include_router(subjects_router)
 app.include_router(platforms_router)
 app.include_router(categories_router)
 app.include_router(backup_router)
+app.include_router(mail_router)
 
 # In production the React app is built to static files and served by this same
 # process, so there's one origin and no CORS/proxy. In development we skip this

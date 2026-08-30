@@ -56,3 +56,87 @@ def test_cannot_delete_platform_still_in_use(client, subject, platform):
 	assert "tracker" in response.json()["detail"].lower()
 	# and it's still there
 	assert len(client.get("/api/platforms/").json()) == 1
+
+
+# ---- notification-mail configuration ---------------------------------------
+
+def test_platform_has_no_mail_domain_by_default(client, platform):
+	assert platform["mail_domain"] is None
+
+
+def test_create_platform_with_a_mail_domain(client):
+	response = client.post(
+		"/api/platforms/",
+		json={"name": "Patreon - Mail", "mail_domain": "creator.patreon.com"},
+	)
+
+	assert response.status_code == 201
+	assert response.json()["mail_domain"] == "creator.patreon.com"
+
+
+def test_mail_domain_is_lowercased(client):
+	body = client.post(
+		"/api/platforms/",
+		json={"name": "Patreon - Mail", "mail_domain": "Creator.Patreon.COM"},
+	).json()
+
+	assert body["mail_domain"] == "creator.patreon.com"
+
+
+def test_two_platforms_cannot_share_a_mail_domain(client):
+	# One domain resolving to two platforms makes every message from it
+	# ambiguous, so this is a 409 rather than a silently dropped field.
+	client.post(
+		"/api/platforms/",
+		json={"name": "Patreon - Mail", "mail_domain": "creator.patreon.com"},
+	)
+
+	response = client.post(
+		"/api/platforms/",
+		json={"name": "Patreon Mail 2", "mail_domain": "creator.patreon.com"},
+	)
+
+	assert response.status_code == 409
+	assert "creator.patreon.com" in response.json()["detail"]
+
+
+def test_mail_domain_survives_a_backup_round_trip(client):
+	client.post(
+		"/api/platforms/",
+		json={"name": "Patreon - Mail", "mail_domain": "creator.patreon.com"},
+	)
+	document = client.get("/api/backup/export").json()
+
+	assert document["platforms"][0]["mail_domain"] == "creator.patreon.com"
+
+	client.post("/api/backup/import?mode=replace", json=document)
+
+	assert client.get("/api/platforms/").json()[0]["mail_domain"] == "creator.patreon.com"
+
+
+def test_import_rejects_two_platforms_sharing_a_domain(client):
+	document = {
+		"version": 1,
+		"platforms": [
+			{"name": "One", "mail_domain": "creator.patreon.com"},
+			{"name": "Two", "mail_domain": "creator.patreon.com"},
+		],
+	}
+
+	response = client.post("/api/backup/import?mode=replace", json=document)
+
+	assert response.status_code == 400
+
+
+def test_import_allows_many_platforms_without_a_domain(client):
+	# The NULL case must not trip the duplicate check — most platforms are
+	# link-only and leave the field empty.
+	document = {
+		"version": 1,
+		"platforms": [{"name": "Pixiv"}, {"name": "Bluesky"}, {"name": "Danbooru"}],
+	}
+
+	response = client.post("/api/backup/import?mode=replace", json=document)
+
+	assert response.status_code == 200
+	assert response.json()["platforms_added"] == 3

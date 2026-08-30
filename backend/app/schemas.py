@@ -1,4 +1,4 @@
-from pydantic import AfterValidator, BaseModel, Field, PlainSerializer
+from pydantic import AfterValidator, AliasChoices, BaseModel, Field, PlainSerializer
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated
@@ -53,6 +53,21 @@ Name = Annotated[str, Field(min_length=1, max_length=255)]
 Url = Annotated[str, Field(min_length=1, max_length=2000)]
 Description = Annotated[str, Field(max_length=1000)]
 
+# Serialized as "handles", but read from either name — and the ORDER is
+# load-bearing.
+#
+# On an ORM object both attributes exist: `handles` is the relationship and holds
+# SubjectHandle objects, while `handle_names` is the property that flattens them
+# to strings. Trying "handles" first would find the relationship and fail
+# validation against list[str]. Trying "handle_names" first gets the strings from
+# a model, and falls through to "handles" for a JSON document — which is what
+# lets one model serve export and import both.
+_HANDLES = Field(
+    default=[],
+    validation_alias=AliasChoices("handle_names", "handles"),
+    max_length=100,
+)
+
 
 class CategoryIn(BaseModel):
     model_config = _STRICT
@@ -71,19 +86,24 @@ class SubjectIn(BaseModel):
 
     name: Name
     category_name: Name | None = None
+    handles: list[Name] = _HANDLES
 
 class SubjectUpdate(BaseModel):
     model_config = _STRICT
 
-    # Deliberately narrow: assigning a category is the only thing this exists
-    # for. Renaming a subject would need 409 handling for the unique constraint
-    # — add it when it's actually wanted.
+    # Still narrow — renaming would need 409 handling for the unique constraint
+    # and is deliberately left out. Handles earn their place because mail
+    # matching is useless without them and they change independently of the name.
     category_name: Name | None = None
+    # An omitted key leaves handles alone; [] clears them. exclude_unset in the
+    # route is what keeps those two apart.
+    handles: list[Name] | None = Field(default=None, max_length=100)
 
 class SubjectOut(BaseModel):
     id: int
     name: str
     category_name: str | None
+    handles: list[str] = _HANDLES
     date_created: UtcDatetime
 
     model_config = {"from_attributes": True}
@@ -92,10 +112,14 @@ class PlatformIn(BaseModel):
     model_config = _STRICT
 
     name: Name
+    # Set this and the platform becomes mail-trackable: incoming messages from
+    # this sender domain resolve to its trackers. Null is a plain saved link.
+    mail_domain: Name | None = None
 
 class PlatformOut(BaseModel):
     id: int
     name: str
+    mail_domain: str | None
     date_created: UtcDatetime
 
     model_config = {"from_attributes": True}
@@ -129,8 +153,37 @@ class TrackerOut(BaseModel):
     description: str | None
     date_created: UtcDatetime
     last_checked: UtcDatetime | None
+    # Updates detected since last_checked. Computed on the model rather than
+    # stored, so nothing can drift out of sync with the rows it counts.
+    unread_count: int = 0
 
     model_config = {"from_attributes": True}
+
+
+class UpdateOut(BaseModel):
+    id: int
+    tracker_id: int
+    summary: str | None
+    detected_at: UtcDatetime
+
+    model_config = {"from_attributes": True}
+
+
+class UnmatchedMailOut(BaseModel):
+    id: int
+    sender: str
+    subject: str | None
+    reason: str
+    received_at: UtcDatetime
+
+    model_config = {"from_attributes": True}
+
+
+class PollResult(BaseModel):
+    fetched: int
+    recorded: int
+    duplicates: int
+    unmatched: int
 
 
 # ---- Backup / restore ------------------------------------------------------
@@ -139,6 +192,12 @@ class TrackerOut(BaseModel):
 # three lookup tables, the file stays readable, and it means the same document
 # works for a merge into a database whose ids are completely different. Nothing
 # outside the DB depends on the ids, so they're simply not exported.
+#
+# `updates` and `unmatched_mail` are deliberately NOT in the document. They are
+# detected signals rather than things the user configured: re-polling the mailbox
+# rebuilds them, they'd grow the file without bound, and their whole meaning is
+# "newer than last_checked" — which a restore into a different database can't
+# preserve anyway. Handles and mail domains ARE configuration and do get saved.
 
 BACKUP_VERSION = 1
 
@@ -156,6 +215,7 @@ class PlatformBackup(BaseModel):
     model_config = _FROM_ORM
 
     name: Name
+    mail_domain: Name | None = None
     date_created: BackupDatetime | None = None
 
 
@@ -164,6 +224,10 @@ class SubjectBackup(BaseModel):
 
     name: Name
     category_name: Name | None = None
+    # Configuration, not derived data, so it has to survive a backup — without
+    # this every export silently drops the handles and a restore leaves mail
+    # matching resolving nothing.
+    handles: list[Name] = _HANDLES
     date_created: BackupDatetime | None = None
 
 
