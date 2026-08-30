@@ -13,18 +13,27 @@ export type Tracker = {
 	description: string | null,
 	date_created: string,
 	last_checked: string | null,
+	// Updates detected since last_checked. Computed by the backend, so it drops
+	// to 0 the moment a check lands — no client-side bookkeeping.
+	unread_count: number,
 };
 
 export type Subject = {
 	id: number,
 	name: string,
 	category_name: string | null,
+	// What this subject is called on the platforms it posts to, lowercased by the
+	// backend. Matched against the local part of a notification email's sender.
+	handles: string[],
 	date_created: string,
 };
 
 export type Platform = {
 	id: number,
 	name: string,
+	// Sender domain of this platform's notification mail, or null for a plain
+	// saved link with no automatic updates.
+	mail_domain: string | null,
 	date_created: string,
 };
 
@@ -58,6 +67,9 @@ export type TrackerUpdate = {
 // null clears the subject's category, while omitting the key leaves it alone.
 export type SubjectUpdate = {
 	category_name?: string | null,
+	// Sent whole, never incrementally: [] clears every handle, omitting the key
+	// leaves them untouched.
+	handles?: string[],
 };
 
 export async function getTrackers(): Promise<Tracker[]> {
@@ -166,6 +178,54 @@ export async function exportBackup(): Promise<unknown> {
 export async function importBackup(data: unknown, mode: ImportMode): Promise<ImportResult> {
 	const response = await api.post<ImportResult>('/backup/import', data, { params: { mode } });
 	return response.data;
+}
+
+// ---- Notification mail -----------------------------------------------------
+
+export type Update = {
+	id: number,
+	tracker_id: number,
+	summary: string | null,
+	detected_at: string,
+};
+
+// Mail that arrived but resolved to no tracker. Surfaced rather than dropped:
+// sender addresses and subject formats change without warning, and silently
+// discarded mail looks exactly like an artist who stopped posting.
+export type UnmatchedMail = {
+	id: number,
+	sender: string,
+	subject: string | null,
+	reason: string,
+	received_at: string,
+};
+
+export type PollResult = {
+	fetched: number,
+	recorded: number,
+	duplicates: number,
+	unmatched: number,
+};
+
+export async function getTrackerUpdates(id: number): Promise<Update[]> {
+	const response = await api.get<Update[]>(`/trackers/${id}/updates`);
+	return response.data;
+}
+
+// 503 when the mailbox env vars aren't set, 502 when the mailbox can't be read —
+// both carry a `detail` worth showing, hence errorDetail at the call site.
+export async function pollMail(): Promise<PollResult> {
+	const response = await api.post<PollResult>('/mail/poll');
+	return response.data;
+}
+
+export async function getUnmatchedMail(): Promise<UnmatchedMail[]> {
+	const response = await api.get<UnmatchedMail[]>('/mail/unmatched');
+	return response.data;
+}
+
+export async function dismissUnmatchedMail(id: number): Promise<void> {
+	await api.delete(`/mail/unmatched/${id}`);
 }
 
 export function errorDetail(error: unknown): string | null {

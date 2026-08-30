@@ -17,19 +17,22 @@ import AddTrackerForm from './AddTrackerForm';
 import AddNameForm from './AddNameForm';
 import NameList from './NameList';
 import SubjectCategorySelect from './SubjectCategorySelect';
+import SubjectHandles from './SubjectHandles';
 import BackupPanel from './BackupPanel';
+import MailPanel from './MailPanel';
 import TitleBar from './TitleBar';
 
 // Only one form is open at a time, so a single value beats four booleans —
 // it makes "these are mutually exclusive" true by construction.
 type OpenForm = 'tracker' | 'subject' | 'platform' | 'category' | null;
-type Tab = 'trackers' | 'subjects' | 'platforms' | 'categories' | 'backup';
+type Tab = 'trackers' | 'subjects' | 'platforms' | 'categories' | 'mail' | 'backup';
 
 const TABS: { id: Tab; label: string }[] = [
 	{ id: 'trackers', label: 'Trackers' },
 	{ id: 'subjects', label: 'Subjects' },
 	{ id: 'platforms', label: 'Platforms' },
 	{ id: 'categories', label: 'Categories' },
+	{ id: 'mail', label: 'Mail' },
 	{ id: 'backup', label: 'Backup' },
 ];
 
@@ -124,6 +127,8 @@ export default function TrackerPanel() {
 		subjects: subjects.length,
 		platforms: platforms.length,
 		categories: categories.length,
+		// Both are pairs of actions rather than lists, so neither has a count.
+		mail: null,
 		backup: null,
 	};
 
@@ -133,6 +138,7 @@ export default function TrackerPanel() {
 		subjects: 'subject',
 		platforms: 'platform',
 		categories: 'category',
+		mail: null,
 		backup: null,
 	};
 
@@ -141,6 +147,7 @@ export default function TrackerPanel() {
 		subjects: '+ Add subject',
 		platforms: '+ Add platform',
 		categories: '+ Add category',
+		mail: '',
 		backup: '',
 	};
 
@@ -257,11 +264,14 @@ export default function TrackerPanel() {
 						items={subjects}
 						usageCount={subjectUsage}
 						renderExtra={(subject) => (
-							<SubjectCategorySelect
-								subject={subject}
-								categories={categories}
-								onChanged={fetchSubjects}
-							/>
+							<>
+								<SubjectHandles subject={subject} onChanged={fetchSubjects} />
+								<SubjectCategorySelect
+									subject={subject}
+									categories={categories}
+									onChanged={fetchSubjects}
+								/>
+							</>
 						)}
 						onDelete={deleteSubject}
 						onDeleted={fetchSubjects}
@@ -276,6 +286,10 @@ export default function TrackerPanel() {
 						onDelete={deletePlatform}
 						onDeleted={fetchPlatforms}
 					/>
+				)}
+
+				{!loading && !loadError && tab === 'mail' && (
+					<MailPanel onPolled={fetchTrackers} />
 				)}
 
 				{!loading && !loadError && tab === 'backup' && (

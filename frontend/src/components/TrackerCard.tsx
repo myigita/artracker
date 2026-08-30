@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { Tracker } from '../api';
-import { checkTracker, deleteTracker, updateTracker } from '../api';
+import type { Tracker, Update } from '../api';
+import { checkTracker, deleteTracker, getTrackerUpdates, updateTracker } from '../api';
 
 type Props = {
 	tracker: Tracker;
@@ -39,6 +39,10 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 	// an object because the value itself can legitimately be null ("never
 	// checked"), which would otherwise be indistinguishable from "nothing to undo".
 	const [undo, setUndo] = useState<{ previous: string | null } | null>(null);
+	// Fetched on demand rather than with the list: the count comes down with every
+	// tracker, but the summaries behind it are only wanted for the one card the
+	// user actually asks about.
+	const [updates, setUpdates] = useState<Update[] | null>(null);
 
 	// Deliberately NOT on a timer. Opening a link moves focus to a new tab, so
 	// the user is looking at the artist's page — possibly for minutes — before
@@ -71,6 +75,17 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 				onUpdated();
 			})
 			.catch(() => setError('Could not undo that.'));
+	}
+
+	function toggleUpdates() {
+		if (updates !== null) {
+			setUpdates(null);
+			return;
+		}
+
+		getTrackerUpdates(tracker.id)
+			.then(setUpdates)
+			.catch(() => setError('Could not load the updates for this tracker.'));
 	}
 
 	function handleDelete() {
@@ -159,6 +174,23 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 		<div className="rounded-lg border border-[var(--border)] p-4 shadow-sm transition-colors hover:border-[var(--accent-border)]">
 			<div className="flex items-center gap-2">
 				<h3 className="truncate font-semibold text-[var(--text-h)]">{tracker.name}</h3>
+				{/* Only when there's something to report. A "0" on every card would
+				    be noise, and the count is exactly the thing meant to catch the
+				    eye when it isn't zero. Clicking it reveals what the updates
+				    actually were — the subject lines are already stored. */}
+				{tracker.unread_count > 0 && (
+					<button
+						type="button"
+						onClick={toggleUpdates}
+						aria-expanded={updates !== null}
+						aria-label={`${tracker.unread_count} new update${
+							tracker.unread_count === 1 ? '' : 's'
+						} for ${tracker.name}`}
+						className="shrink-0 cursor-pointer rounded-full bg-[var(--accent)] px-2 py-0.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+					>
+						{tracker.unread_count} new
+					</button>
+				)}
 				{/* Omitted entirely when the subject has no category — an empty
 				    pill would be noise on every uncategorized card. */}
 				{tracker.subject_category && (
@@ -208,6 +240,23 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 					<CloseIcon />
 				</button>
 			</div>
+			{updates !== null && (
+				<ul className="mt-3 flex flex-col gap-1 border-t border-[var(--border)] pt-3">
+					{updates.map((update) => (
+						<li key={update.id} className="flex items-baseline gap-2 text-sm">
+							<span className="truncate text-[var(--text-h)]">
+								{update.summary || '(no subject)'}
+							</span>
+							<span className="ml-auto shrink-0 text-xs text-[var(--text)]">
+								{timeAgo(update.detected_at)}
+							</span>
+						</li>
+					))}
+					{updates.length === 0 && (
+						<li className="text-sm text-[var(--text)]">Nothing recorded yet.</li>
+					)}
+				</ul>
+			)}
 			{error && <p className="mt-2 text-sm text-red-500">{error}</p>}
 		</div>
 	);
