@@ -214,6 +214,78 @@ def test_a_rejected_import_changes_nothing(client):
 	assert client.get("/api/subjects/").json() == before_subjects
 
 
+def test_restore_keeps_two_trackers_sharing_a_url(client, category):
+	"""REGRESSION: identity used to be the url alone, so restoring a backup
+	silently dropped every tracker after the first that shared a URL — data loss
+	in the feature whose whole job is preventing it."""
+	client.post("/api/platforms/", json={"name": "Pixiv"})
+	client.post("/api/subjects/", json={"name": "Denji"})
+	client.post("/api/subjects/", json={"name": "Power"})
+	shared = "https://example.test/shared-page"
+	for subject in ("Denji", "Power"):
+		client.post("/api/trackers/", json={
+			"subject_name": subject, "platform_name": "Pixiv", "url": shared,
+		})
+
+	backup = client.get("/api/backup/export").json()
+	assert len(backup["trackers"]) == 2
+
+	client.post("/api/backup/import?mode=replace", json=backup)
+
+	restored = client.get("/api/trackers/").json()
+	assert len(restored) == 2
+	assert sorted(t["subject_name"] for t in restored) == ["Denji", "Power"]
+
+
+def test_restore_keeps_exact_duplicate_rows(client, subject, platform):
+	"""Nothing stops two identical trackers existing, so a restore has to
+	reproduce both. The dedupe set must not grow as rows are inserted."""
+	for _ in range(2):
+		make = client.post("/api/trackers/", json={
+			"subject_name": subject["name"], "platform_name": platform["name"],
+			"url": "https://example.test/dupe",
+		})
+		assert make.status_code == 201
+
+	backup = client.get("/api/backup/export").json()
+	client.post("/api/backup/import?mode=replace", json=backup)
+
+	assert len(client.get("/api/trackers/").json()) == 2
+
+
+def test_merge_adds_a_tracker_sharing_a_url_with_a_different_subject(client, platform):
+	client.post("/api/subjects/", json={"name": "Denji"})
+	client.post("/api/subjects/", json={"name": "Power"})
+	shared = "https://example.test/shared-page"
+	client.post("/api/trackers/", json={
+		"subject_name": "Denji", "platform_name": platform["name"], "url": shared,
+	})
+
+	body = client.post("/api/backup/import?mode=merge", json={
+		"version": 1,
+		"trackers": [{
+			"name": "Power there too", "subject_name": "Power",
+			"platform_name": platform["name"], "url": shared,
+		}],
+	}).json()
+
+	assert body["trackers_added"] == 1
+	assert len(client.get("/api/trackers/").json()) == 2
+
+
+def test_merge_still_skips_a_tracker_that_is_genuinely_present(client, subject, platform):
+	client.post("/api/trackers/", json={
+		"subject_name": subject["name"], "platform_name": platform["name"],
+		"url": "https://example.test/a",
+	})
+	backup = client.get("/api/backup/export").json()
+
+	body = client.post("/api/backup/import?mode=merge", json=backup).json()
+
+	assert body["trackers_added"] == 0
+	assert len(client.get("/api/trackers/").json()) == 1
+
+
 def test_import_rejects_malformed_rows(client):
 	response = client.post(
 		"/api/backup/import?mode=merge",

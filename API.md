@@ -108,9 +108,12 @@ Running the identical request again returns all zeros with `"skipped": 7`.
   format at all — they aren't exported and are ignored if sent.
 - `version` must be `1`. Anything else 400s.
 - Every list is optional; an empty document is a valid no-op.
-- **Identity for skipping:** the unique `name` for categories, platforms and
-  subjects; the **`url`** for trackers, because tracker names are not unique and
-  the URL is what actually identifies the destination.
+- **Identity for skipping (merge only):** the unique `name` for categories,
+  platforms and subjects; the whole **`(subject_name, platform_name, url)`**
+  triple for trackers. Not the URL alone — two subjects can legitimately point at
+  the same page, and treating those as one row loses one of them.
+- **`replace` skips nothing.** The tables are empty by that point, so every row
+  in the file is inserted, including rows that are identical to each other.
 - `date_created` and `last_checked` are optional. Omit them and `date_created`
   defaults to now, `last_checked` to null ("never checked").
 - **`?mode=replace` deletes all four tables first.** Only use it for restoring a

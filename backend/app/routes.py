@@ -22,7 +22,7 @@ from .schemas import (
 	ImportMode,
 	ImportResult,
 )
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 router = APIRouter(prefix="/api/trackers")
 subjects_router = APIRouter(prefix="/api/subjects")
@@ -276,7 +276,24 @@ def import_backup(
 	categories = {c.name: c for c in db.query(Category).all()}
 	platforms = {p.name: p for p in db.query(Platform).all()}
 	subjects = {s.name: s for s in db.query(Subject).all()}
-	tracker_urls = {t.url for t in db.query(Tracker).all()}
+	# Trackers have no unique constraint, so "already present" has to be defined
+	# here. The key is the whole (subject, platform, url) triple rather than the
+	# url alone: two subjects can legitimately point at the same page, and
+	# collapsing those loses a row.
+	#
+	# In replace mode the table was just emptied, so nothing can already be
+	# present and every row in the file is inserted. This set is also NOT added
+	# to as rows are inserted — otherwise two identical rows in one file would
+	# collide with each other, and a restore would silently drop the second.
+	if mode is ImportMode.replace:
+		existing_trackers: set[tuple[str, str, str]] = set()
+	else:
+		existing_trackers = {
+			(t.subject.name, t.platform.name, t.url)
+			for t in db.query(Tracker)
+			.options(joinedload(Tracker.subject), joinedload(Tracker.platform))
+			.all()
+		}
 
 	added = {"categories": 0, "platforms": 0, "subjects": 0, "trackers": 0}
 	skipped = 0
@@ -322,9 +339,7 @@ def import_backup(
 		added["subjects"] += 1
 
 	for item in payload.trackers:
-		# URL is the identity for merge purposes: it's what actually names the
-		# destination, and tracker names are not unique.
-		if item.url in tracker_urls:
+		if (item.subject_name, item.platform_name, item.url) in existing_trackers:
 			skipped += 1
 			continue
 		subject = subjects.get(item.subject_name)
@@ -348,7 +363,6 @@ def import_backup(
 			date_created=item.date_created or utcnow(),
 			last_checked=item.last_checked,
 		))
-		tracker_urls.add(item.url)
 		added["trackers"] += 1
 
 	db.commit()

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { ImportMode, ImportResult } from '../api';
 import { exportBackup, importBackup, errorDetail } from '../api';
 
@@ -16,6 +16,11 @@ function today() {
 }
 
 export default function BackupPanel({ onImported }: Props) {
+	// The <input type="file"> is uncontrolled — clearing the state above doesn't
+	// clear what it displays, so after an import it would keep showing the
+	// filename next to a disabled button and look stuck. Only the DOM node can
+	// reset that.
+	const fileInput = useRef<HTMLInputElement>(null);
 	const [file, setFile] = useState<File | null>(null);
 	const [mode, setMode] = useState<ImportMode>('merge');
 	const [confirming, setConfirming] = useState(false);
@@ -79,6 +84,7 @@ export default function BackupPanel({ onImported }: Props) {
 				setResult(imported);
 				setConfirming(false);
 				setFile(null);
+				if (fileInput.current) fileInput.current.value = '';
 				onImported();
 			})
 			.catch((err) => {
@@ -114,6 +120,7 @@ export default function BackupPanel({ onImported }: Props) {
 				<h3 className="font-semibold text-[var(--text-h)]">Import</h3>
 
 				<input
+					ref={fileInput}
 					type="file"
 					accept="application/json,.json"
 					onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
