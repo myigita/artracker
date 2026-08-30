@@ -18,6 +18,7 @@ import AddNameForm from './AddNameForm';
 import NameList from './NameList';
 import SubjectCategorySelect from './SubjectCategorySelect';
 import BackupPanel from './BackupPanel';
+import TitleBar from './TitleBar';
 
 // Only one form is open at a time, so a single value beats four booleans —
 // it makes "these are mutually exclusive" true by construction.
@@ -153,160 +154,147 @@ export default function TrackerPanel() {
 		/>
 	));
 
-	return (
-		<div className="mx-auto max-w-2xl p-6">
-			<div className="mb-4 flex flex-wrap items-center gap-2">
-				<div className="mr-auto flex gap-1" role="tablist">
-					{TABS.map(({ id, label }) => (
-						<button
-							key={id}
-							type="button"
-							role="tab"
-							aria-selected={tab === id}
-							onClick={() => {
-								setTab(id);
-								setOpenForm(null);
-								setNotice(null);
-							}}
-							className={`cursor-pointer rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-								tab === id
-									? 'bg-[var(--accent-bg)] text-[var(--text-h)]'
-									: 'text-[var(--text)] hover:text-[var(--text-h)]'
-							}`}
-						>
-							{label}
-							{counts[id] !== null && (
-								<span className="text-xs font-normal"> ({counts[id]})</span>
-							)}
-						</button>
-					))}
-				</div>
+	const addButton = openForm === null && addFormFor[tab] !== null && (
+		<button
+			type="button"
+			onClick={() => openFormAndClearNotice(addFormFor[tab])}
+			className={`${buttonClass} bg-[var(--accent)] text-white`}
+		>
+			{addLabel[tab]}
+		</button>
+	);
 
-				{openForm === null && addFormFor[tab] !== null && (
-					<button
-						type="button"
-						onClick={() => openFormAndClearNotice(addFormFor[tab])}
-						className={`${buttonClass} bg-[var(--accent)] text-white`}
-					>
-						{addLabel[tab]}
-					</button>
+	return (
+		<>
+			<TitleBar
+				title="Artracker"
+				tabs={TABS}
+				active={tab}
+				counts={counts}
+				onSelect={(id) => {
+					setTab(id);
+					setOpenForm(null);
+					setNotice(null);
+				}}
+				action={addButton}
+			/>
+
+			<div className="mx-auto max-w-2xl p-6">
+				{notice && (
+					<p className="mb-4 rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-2 text-sm text-[var(--text-h)]">
+						{notice}
+					</p>
+				)}
+
+				{openForm === 'tracker' && (
+					<AddTrackerForm onAdded={handleAdded} onCancel={() => setOpenForm(null)} />
+				)}
+
+				{openForm === 'subject' && (
+					<AddNameForm
+						label="Subject"
+						onCreate={createSubject}
+						onCreated={(name) => handleNameCreated('subject', name)}
+						onCancel={() => setOpenForm(null)}
+					/>
+				)}
+
+				{openForm === 'platform' && (
+					<AddNameForm
+						label="Platform"
+						onCreate={createPlatform}
+						onCreated={(name) => handleNameCreated('platform', name)}
+						onCancel={() => setOpenForm(null)}
+					/>
+				)}
+
+				{openForm === 'category' && (
+					<AddNameForm
+						label="Category"
+						onCreate={createCategory}
+						onCreated={(name) => handleNameCreated('category', name)}
+						onCancel={() => setOpenForm(null)}
+					/>
+				)}
+
+				{loadError && (
+					<div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-sm text-[var(--text-h)]">
+						<p className="font-medium">Couldn’t reach the server.</p>
+						<p className="mt-1 text-[var(--text)]">
+							Your data is probably fine — this page just can’t load it right now.
+						</p>
+						<button
+							type="button"
+							onClick={() => {
+								setLoading(true);
+								fetchAll();
+							}}
+							className="mt-3 cursor-pointer rounded-md border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-h)] transition-colors hover:border-[var(--accent-border)]"
+						>
+							Retry
+						</button>
+					</div>
+				)}
+
+				{loading && !loadError && (
+					<p className="p-8 text-center text-sm text-[var(--text)]">Loading…</p>
+				)}
+
+				{!loading && !loadError && tab === 'trackers' && (
+					<>
+						<div className="flex flex-col gap-3">{cards}</div>
+						{trackers.length === 0 && openForm === null && (
+							<p className="rounded-lg border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--text)]">
+								No trackers yet — add your first one to get started.
+							</p>
+						)}
+					</>
+				)}
+
+				{!loading && !loadError && tab === 'subjects' && (
+					<NameList
+						label="Subject"
+						items={subjects}
+						usageCount={subjectUsage}
+						renderExtra={(subject) => (
+							<SubjectCategorySelect
+								subject={subject}
+								categories={categories}
+								onChanged={fetchSubjects}
+							/>
+						)}
+						onDelete={deleteSubject}
+						onDeleted={fetchSubjects}
+					/>
+				)}
+
+				{!loading && !loadError && tab === 'platforms' && (
+					<NameList
+						label="Platform"
+						items={platforms}
+						usageCount={platformUsage}
+						onDelete={deletePlatform}
+						onDeleted={fetchPlatforms}
+					/>
+				)}
+
+				{!loading && !loadError && tab === 'backup' && (
+					<BackupPanel onImported={fetchAll} />
+				)}
+
+				{!loading && !loadError && tab === 'categories' && (
+					<NameList
+						label="Category"
+						items={categories}
+						usageCount={categoryUsage}
+						usageLabel="subject"
+						plural="categories"
+						blockedHint="Reassign those first."
+						onDelete={deleteCategory}
+						onDeleted={fetchCategories}
+					/>
 				)}
 			</div>
-
-			{notice && (
-				<p className="mb-4 rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-2 text-sm text-[var(--text-h)]">
-					{notice}
-				</p>
-			)}
-
-			{openForm === 'tracker' && (
-				<AddTrackerForm onAdded={handleAdded} onCancel={() => setOpenForm(null)} />
-			)}
-
-			{openForm === 'subject' && (
-				<AddNameForm
-					label="Subject"
-					onCreate={createSubject}
-					onCreated={(name) => handleNameCreated('subject', name)}
-					onCancel={() => setOpenForm(null)}
-				/>
-			)}
-
-			{openForm === 'platform' && (
-				<AddNameForm
-					label="Platform"
-					onCreate={createPlatform}
-					onCreated={(name) => handleNameCreated('platform', name)}
-					onCancel={() => setOpenForm(null)}
-				/>
-			)}
-
-			{openForm === 'category' && (
-				<AddNameForm
-					label="Category"
-					onCreate={createCategory}
-					onCreated={(name) => handleNameCreated('category', name)}
-					onCancel={() => setOpenForm(null)}
-				/>
-			)}
-
-			{loadError && (
-				<div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-sm text-[var(--text-h)]">
-					<p className="font-medium">Couldn’t reach the server.</p>
-					<p className="mt-1 text-[var(--text)]">
-						Your data is probably fine — this page just can’t load it right now.
-					</p>
-					<button
-						type="button"
-						onClick={() => {
-							setLoading(true);
-							fetchAll();
-						}}
-						className="mt-3 cursor-pointer rounded-md border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-h)] transition-colors hover:border-[var(--accent-border)]"
-					>
-						Retry
-					</button>
-				</div>
-			)}
-
-			{loading && !loadError && (
-				<p className="p-8 text-center text-sm text-[var(--text)]">Loading…</p>
-			)}
-
-			{!loading && !loadError && tab === 'trackers' && (
-				<>
-					<div className="flex flex-col gap-3">{cards}</div>
-					{trackers.length === 0 && openForm === null && (
-						<p className="rounded-lg border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--text)]">
-							No trackers yet — add your first one to get started.
-						</p>
-					)}
-				</>
-			)}
-
-			{!loading && !loadError && tab === 'subjects' && (
-				<NameList
-					label="Subject"
-					items={subjects}
-					usageCount={subjectUsage}
-					renderExtra={(subject) => (
-						<SubjectCategorySelect
-							subject={subject}
-							categories={categories}
-							onChanged={fetchSubjects}
-						/>
-					)}
-					onDelete={deleteSubject}
-					onDeleted={fetchSubjects}
-				/>
-			)}
-
-			{!loading && !loadError && tab === 'platforms' && (
-				<NameList
-					label="Platform"
-					items={platforms}
-					usageCount={platformUsage}
-					onDelete={deletePlatform}
-					onDeleted={fetchPlatforms}
-				/>
-			)}
-
-			{!loading && !loadError && tab === 'backup' && (
-				<BackupPanel onImported={fetchAll} />
-			)}
-
-			{!loading && !loadError && tab === 'categories' && (
-				<NameList
-					label="Category"
-					items={categories}
-					usageCount={categoryUsage}
-					usageLabel="subject"
-					plural="categories"
-					blockedHint="Reassign those first."
-					onDelete={deleteCategory}
-					onDeleted={fetchCategories}
-				/>
-			)}
-		</div>
+		</>
 	);
 }

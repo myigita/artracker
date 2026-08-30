@@ -11,7 +11,12 @@
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  /* Inter first when it's installed locally, then the platform's own UI sans.
+     No webfont on purpose — this app is served from its own container, and a
+     Google Fonts <link> would make the page depend on the network. */
+  --sans:
+    Inter, 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
   font: 18px/145% var(--sans);
