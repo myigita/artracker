@@ -80,16 +80,19 @@ export default function SubjectHandles({ subject, onChanged }: Props) {
 
 			<div className="mt-3 flex flex-wrap items-center gap-2">
 				{subject.handles.map((handle) => (
-					// justify-center with symmetric padding, so the handle sits centred
-					// while nothing else is showing.
+					// The right padding permanently reserves room for the ×, so the pill
+					// never changes width and hovering one can't shove the pills after it
+					// sideways. Measured before this: at px-3 the × overlapped the label
+					// by 9.8px, and still by 3.8px after the old 6px nudge — there was
+					// simply no room for both.
 					<span
 						key={handle}
-						className="group relative inline-flex items-center justify-center rounded-full border border-[var(--border)] px-3 py-1 text-xs text-[var(--text-h)]"
+						className="group relative inline-flex items-center rounded-full border border-[var(--border)] py-1 pl-3 pr-7 text-xs text-[var(--text-h)]"
 					>
-						{/* Shifts left to clear room for the ×. The × is absolutely
-						    positioned so it costs no layout width, which is what keeps the
-						    pill from growing as it appears — the text moves instead. */}
-						<span className="-translate-x-1.5 transition-transform motion-reduce:transition-none [@media(hover:hover)]:translate-x-0 [@media(hover:hover)]:group-focus-within:-translate-x-1.5 [@media(hover:hover)]:group-hover:-translate-x-1.5">
+						{/* At rest the reserved space would leave the handle looking
+						    off-centre, so it's nudged right by half of it. On hover the nudge
+						    goes away, which reads as the text sliding left to make room. */}
+						<span className="translate-x-0 transition-transform motion-reduce:transition-none [@media(hover:hover)]:translate-x-2 [@media(hover:hover)]:group-focus-within:translate-x-0 [@media(hover:hover)]:group-hover:translate-x-0">
 							{handle}
 						</span>
 						<button
@@ -101,7 +104,10 @@ export default function SubjectHandles({ subject, onChanged }: Props) {
 							// screen has no hover state to enter, so the reverse would leave
 							// the handle permanently unremovable on a phone. Keyboards don't
 							// hover either, hence group-focus-within.
-							className="absolute right-1.5 cursor-pointer rounded-full p-0.5 text-[var(--text)] transition-opacity hover:text-red-500 focus-visible:text-red-500 disabled:cursor-not-allowed motion-reduce:transition-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100"
+							// top-1/2 with the -translate-y-1/2 correction rather than relying
+							// on the flex parent's align-items, which only positions abspos
+							// children by their static position and is easy to disturb.
+							className="absolute right-1.5 top-1/2 -translate-y-1/2 cursor-pointer rounded-full p-0.5 text-[var(--text)] transition-opacity hover:text-red-500 focus-visible:text-red-500 disabled:cursor-not-allowed motion-reduce:transition-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100"
 						>
 							<svg
 								width="12"
