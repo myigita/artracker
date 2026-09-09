@@ -263,15 +263,19 @@ export default function TrackerPanel() {
 						label="Subject"
 						items={subjects}
 						usageCount={subjectUsage}
+						// Category stays in the always-visible header — it's a single
+						// value and reads at a glance. Handles move into the expanded
+						// panel: a variable-length list of pills is too much to carry in
+						// a row, and it was the thing making that row overflow.
 						renderExtra={(subject) => (
-							<>
-								<SubjectHandles subject={subject} onChanged={fetchSubjects} />
-								<SubjectCategorySelect
-									subject={subject}
-									categories={categories}
-									onChanged={fetchSubjects}
-								/>
-							</>
+							<SubjectCategorySelect
+								subject={subject}
+								categories={categories}
+								onChanged={fetchSubjects}
+							/>
+						)}
+						renderExpanded={(subject) => (
+							<SubjectHandles subject={subject} onChanged={fetchSubjects} />
 						)}
 						onDelete={deleteSubject}
 						onDeleted={fetchSubjects}
