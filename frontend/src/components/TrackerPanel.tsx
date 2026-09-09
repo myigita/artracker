@@ -268,11 +268,21 @@ export default function TrackerPanel() {
 						// panel: a variable-length list of pills is too much to carry in
 						// a row, and it was the thing making that row overflow.
 						renderExtra={(subject) => (
-							<SubjectCategorySelect
-								subject={subject}
-								categories={categories}
-								onChanged={fetchSubjects}
-							/>
+							<>
+								{/* Collapsed, the handles themselves are hidden, so the count
+								    is the only sign there are any — and "0 handles" is the
+								    signal that this subject can never match mail. */}
+								<span className="shrink-0 text-xs text-[var(--text)]">
+									{subject.handles.length === 1
+										? '1 handle'
+										: `${subject.handles.length} handles`}
+								</span>
+								<SubjectCategorySelect
+									subject={subject}
+									categories={categories}
+									onChanged={fetchSubjects}
+								/>
+							</>
 						)}
 						renderExpanded={(subject) => (
 							<SubjectHandles subject={subject} onChanged={fetchSubjects} />

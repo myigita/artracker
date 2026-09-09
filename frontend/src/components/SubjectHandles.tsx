@@ -72,8 +72,7 @@ export default function SubjectHandles({ subject, onChanged }: Props) {
 						className="pointer-events-none absolute left-0 top-full z-20 mt-1.5 w-64 rounded-md border border-[var(--border)] bg-[var(--bg)] p-2 text-xs leading-snug text-[var(--text)] opacity-0 shadow-[var(--shadow)] transition-opacity group-hover/hint:opacity-100 group-focus-within/hint:opacity-100 motion-reduce:transition-none"
 					>
 						What this subject is called on the platforms it posts to. Matched
-						against the sender of notification mail — <code>peargor</code> catches
-						mail from <code>peargor@creator.patreon.com</code>.
+						against the sender of notification mail.
 					</span>
 				</span>
 			</div>
