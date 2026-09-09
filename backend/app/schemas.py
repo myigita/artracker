@@ -120,6 +120,9 @@ class PlatformOut(BaseModel):
     id: int
     name: str
     mail_domain: str | None
+    # Seeded by the app and refused deletion. Sent so the UI can disable the
+    # control rather than offering a button that always fails.
+    is_preset: bool
     date_created: UtcDatetime
 
     model_config = {"from_attributes": True}
@@ -184,6 +187,38 @@ class PollResult(BaseModel):
     recorded: int
     duplicates: int
     unmatched: int
+
+
+class MailAccountIn(BaseModel):
+    model_config = _STRICT
+
+    host: Name
+    port: int = Field(default=993, ge=1, le=65535)
+    username: Name
+    # Optional so the form can be re-saved without retyping the password — the
+    # UI never receives it back, so it has nothing to send unless the user is
+    # actually changing it. Omitted means "keep what's stored"; an empty string
+    # is rejected rather than silently wiping the credential.
+    password: str | None = Field(default=None, min_length=1, max_length=1000)
+    mailbox: Name = "INBOX"
+
+
+class MailAccountOut(BaseModel):
+    """Everything about the mailbox EXCEPT the password.
+
+    The omission is the point. Every endpoint here is unauthenticated, so a
+    password on a response model is a password served to anyone who can reach the
+    app. `has_password` carries the only thing the UI actually needs to know.
+    """
+    host: str
+    port: int
+    username: str
+    mailbox: str
+    has_password: bool
+    # "database", "environment" or "unset" — so the Settings page can say where
+    # the current mailbox came from instead of showing a form that looks empty
+    # on a container configured through env vars.
+    source: str
 
 
 # ---- Backup / restore ------------------------------------------------------

@@ -2,7 +2,7 @@ import os
 
 from sqlalchemy import create_engine, func, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
-from .models import Base, Platform
+from .models import PREDEFINED_PLATFORMS, Base, Platform
 
 # Relative path by default (resolves against the working directory), which keeps
 # local dev unchanged. In Docker this is pointed at a mounted volume so the file
@@ -69,19 +69,10 @@ def ensure_schema(bind) -> None:
 				connection.execute(text(statement))
 
 
-# Platforms the app knows how to read notification mail for. Seeded rather than
-# left to the user because the sender domain is a fact about the platform, not a
-# preference — nobody should have to look up "creator.patreon.com" by hand.
-#
-# Deleting one puts it back on the next restart. That is the trade for not
-# needing a "was this ever seeded" flag, and re-adding an empty platform row is
-# cheap; the trackers hanging off it are what matter and they block the delete
-# with a 409 anyway.
-PREDEFINED_PLATFORMS: list[tuple[str, str]] = [
-	("Patreon - Mail", "creator.patreon.com"),
-]
-
-
+# The seed list itself lives in models.py, so Platform.is_preset can read it
+# without importing this module. Deleting a seeded platform is refused outright
+# — see delete_platform — rather than allowed and then silently undone here on
+# the next restart.
 def seed_platforms(bind) -> None:
 	with Session(bind) as session:
 		for name, mail_domain in PREDEFINED_PLATFORMS:

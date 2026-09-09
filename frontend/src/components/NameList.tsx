@@ -23,6 +23,11 @@ type Props<T extends NameItem> = {
 	plural?: string;
 	// What to do about it when a delete is refused.
 	blockedHint?: string;
+	// Rows that can never be deleted, whatever their usage count. The button is
+	// disabled with an explanation rather than hidden, so its absence doesn't
+	// read as a rendering bug.
+	isProtected?: (item: T) => boolean;
+	protectedHint?: string;
 	// Optional per-row control, rendered after the name. Always visible.
 	renderExtra?: (item: T) => React.ReactNode;
 	// Optional detail panel, revealed by a chevron. Supplying this is what makes
@@ -40,6 +45,8 @@ export default function NameList<T extends NameItem>({
 	usageLabel = 'tracker',
 	plural = `${label.toLowerCase()}s`,
 	blockedHint = 'Delete those first.',
+	isProtected,
+	protectedHint = 'Built in — can’t be deleted.',
 	renderExtra,
 	renderExpanded,
 	onDelete,
@@ -94,6 +101,7 @@ export default function NameList<T extends NameItem>({
 				{items.map((item) => {
 					const count = usageCount(item.name);
 					const isOpen = expanded.has(item.id);
+					const protectedRow = isProtected?.(item) ?? false;
 					return (
 							<div
 								key={item.id}
@@ -137,12 +145,14 @@ export default function NameList<T extends NameItem>({
 									<button
 										type="button"
 										onClick={() => handleDelete(item)}
-										disabled={busyId === item.id}
+										disabled={busyId === item.id || protectedRow}
 										aria-label={`Delete ${item.name}`}
 										title={
-											count > 0
-												? `Still has ${usageLabel}s — ${blockedHint.toLowerCase()}`
-												: `Delete ${item.name}`
+											protectedRow
+												? protectedHint
+												: count > 0
+													? `Still has ${usageLabel}s — ${blockedHint.toLowerCase()}`
+													: `Delete ${item.name}`
 										}
 										className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-colors hover:text-red-500 focus-visible:text-red-500 disabled:opacity-40"
 									>

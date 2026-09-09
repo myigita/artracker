@@ -1,9 +1,16 @@
 from fastapi import APIRouter, HTTPException, Depends
 
 from .database import get_db
-from .mail import MailError, get_mail_config, get_mail_fetcher, record_messages
+from .mail import (
+	MailError,
+	get_mail_config,
+	get_mail_fetcher,
+	mail_config_from_env,
+	record_messages,
+)
 from .models import (
 	Category,
+	MailAccount,
 	Subject,
 	SubjectHandle,
 	Tracker,
@@ -32,6 +39,8 @@ from .schemas import (
 	TrackerBackup,
 	ImportMode,
 	ImportResult,
+	MailAccountIn,
+	MailAccountOut,
 	PollResult,
 	UnmatchedMailOut,
 	UpdateOut,
@@ -290,6 +299,15 @@ def delete_platform(platform_id: int, db: Session = Depends(get_db)):
 	platform = db.query(Platform).filter(Platform.id == platform_id).first()
 	if not platform:
 		raise HTTPException(status_code=404, detail="Platform not found")
+
+	# Seeding recreates these on every boot, so allowing the delete meant the row
+	# vanished and then came back — indistinguishable from the app ignoring you.
+	# Refusing outright at least says what's happening.
+	if platform.is_preset:
+		raise HTTPException(
+			status_code=409,
+			detail=f"'{platform.name}' is built in and can't be deleted",
+		)
 
 	tracker_count = db.query(Tracker).filter(Tracker.platform_id == platform_id).count()
 	if tracker_count:
@@ -573,4 +591,85 @@ def dismiss_unmatched_mail(unmatched_id: int, db: Session = Depends(get_db)):
 		raise HTTPException(status_code=404, detail="Unmatched mail not found")
 
 	db.delete(unmatched)
+	db.commit()
+
+# The mailbox the poller reads. Stored rather than env-only so it can be set from
+# the Settings page; mail.resolve_mail_config falls back to ARTRACKER_MAIL_* when
+# no row exists, so containers configured the old way keep working.
+def _mail_account(db: Session) -> MailAccount | None:
+	return db.query(MailAccount).first()
+
+@mail_router.get("/account", response_model=MailAccountOut)
+def get_mail_account(db: Session = Depends(get_db)):
+	account = _mail_account(db)
+	if account:
+		return MailAccountOut(
+			host=account.host,
+			port=account.port,
+			username=account.username,
+			mailbox=account.mailbox or "INBOX",
+			has_password=bool(account.password),
+			source="database",
+		)
+
+	# Nothing stored, so report whatever the environment provides. Returning the
+	# env values rather than a blank form is what stops the Settings page from
+	# claiming a working deployment is unconfigured.
+	env = mail_config_from_env()
+	if env:
+		return MailAccountOut(
+			host=env.host,
+			port=env.port,
+			username=env.user,
+			mailbox=env.mailbox,
+			has_password=True,
+			source="environment",
+		)
+
+	return MailAccountOut(
+		host="", port=993, username="", mailbox="INBOX", has_password=False, source="unset"
+	)
+
+@mail_router.put("/account", response_model=MailAccountOut)
+def set_mail_account(payload: MailAccountIn, db: Session = Depends(get_db)):
+	account = _mail_account(db)
+
+	if account is None:
+		# First save has to carry a password; there is nothing to fall back on.
+		if not payload.password:
+			raise HTTPException(status_code=400, detail="A password is required")
+		account = MailAccount(password=payload.password)
+		db.add(account)
+
+	account.host = payload.host
+	account.port = payload.port
+	account.username = payload.username
+	account.mailbox = payload.mailbox
+	# Omitted means "keep the stored one". The UI never receives the password
+	# back, so it has nothing to send unless the user is actually changing it —
+	# without this, editing the host would wipe the credential.
+	if payload.password:
+		account.password = payload.password
+	account.updated_at = utcnow()
+
+	db.commit()
+
+	return MailAccountOut(
+		host=account.host,
+		port=account.port,
+		username=account.username,
+		mailbox=account.mailbox,
+		has_password=bool(account.password),
+		source="database",
+	)
+
+@mail_router.delete("/account", status_code=204)
+def clear_mail_account(db: Session = Depends(get_db)):
+	account = _mail_account(db)
+	if not account:
+		raise HTTPException(status_code=404, detail="No mailbox is stored")
+
+	# Deleting the row falls back to the environment rather than disabling the
+	# feature outright, which is the point of keeping that path alive.
+	db.delete(account)
 	db.commit()

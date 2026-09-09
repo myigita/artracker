@@ -297,6 +297,10 @@ export default function TrackerPanel() {
 						label="Platform"
 						items={platforms}
 						usageCount={platformUsage}
+						// The backend refuses these and recreates them on every start, so
+						// offering a button that always 409s would just be a trap.
+						isProtected={(item) => item.is_preset}
+						protectedHint="Built in — recreated on every start, so it can’t be deleted."
 						onDelete={deletePlatform}
 						onDeleted={fetchPlatforms}
 					/>

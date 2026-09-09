@@ -203,8 +203,11 @@ def test_unmatched_mail_can_be_dismissed(client, mailbox):
 	assert client.get("/api/mail/unmatched").json() == []
 
 
-def test_poll_without_configuration_503s(client):
-	# No `mailbox` fixture, so the env-backed config is None.
+def test_poll_without_configuration_503s(client, no_mail_env):
+	# No `mailbox` fixture and no stored account, so there is no config at all.
+	# no_mail_env matters: without it this passes only on a machine that happens
+	# not to export ARTRACKER_MAIL_*, which stops being true the moment someone
+	# actually configures the feature that way.
 	response = client.post("/api/mail/poll")
 
 	assert response.status_code == 503
@@ -258,3 +261,141 @@ def test_deleting_a_tracker_takes_its_updates_with_it(client, mailbox):
 
 	assert body["recorded"] == 1
 	assert len(client.get(f"/api/trackers/{rebuilt['id']}/updates").json()) == 1
+
+
+# ---- stored mailbox credentials --------------------------------------------
+
+import json as _json
+
+from app.mail import resolve_mail_config
+from app.models import MailAccount
+
+MAILBOX_ENV = ("ARTRACKER_MAIL_HOST", "ARTRACKER_MAIL_USER", "ARTRACKER_MAIL_PASSWORD")
+
+
+@pytest.fixture
+def no_mail_env(monkeypatch):
+	"""Nothing configured through the environment, whatever the shell has set."""
+	for name in MAILBOX_ENV:
+		monkeypatch.delenv(name, raising=False)
+
+
+def save_account(client, **overrides):
+	payload = {
+		"host": "imap.example.test",
+		"username": "gather@example.test",
+		"password": "hunter2",
+		**overrides,
+	}
+	return client.put("/api/mail/account", json=payload)
+
+
+def test_mailbox_starts_unset(client, no_mail_env):
+	body = client.get("/api/mail/account").json()
+
+	assert body["source"] == "unset"
+	assert body["has_password"] is False
+
+
+def test_saving_the_mailbox(client, no_mail_env):
+	response = save_account(client)
+
+	assert response.status_code == 200
+	assert response.json()["source"] == "database"
+	assert response.json()["has_password"] is True
+
+
+def test_the_password_is_never_returned(client, no_mail_env):
+	# The whole reason MailAccountOut omits it: every endpoint here is
+	# unauthenticated, so anything on a response model is public.
+	save_account(client)
+
+	body = client.get("/api/mail/account").json()
+
+	assert "password" not in body
+	assert "hunter2" not in _json.dumps(body)
+
+
+def test_the_password_is_not_in_the_backup(client, no_mail_env):
+	# The export is a file that gets downloaded and passed around.
+	save_account(client)
+
+	document = client.get("/api/backup/export").json()
+
+	assert "hunter2" not in _json.dumps(document)
+
+
+def test_the_first_save_requires_a_password(client, no_mail_env):
+	response = client.put(
+		"/api/mail/account",
+		json={"host": "imap.example.test", "username": "gather@example.test"},
+	)
+
+	assert response.status_code == 400
+
+
+def test_editing_without_a_password_keeps_the_stored_one(client, db_session, no_mail_env):
+	# The UI never receives the password back, so it has nothing to resend when
+	# only the host changes. Without this, editing any field wipes the credential.
+	save_account(client)
+
+	save_account(client, host="imap2.example.test", password=None)
+
+	account = db_session.query(MailAccount).first()
+	assert account.host == "imap2.example.test"
+	assert account.password == "hunter2"
+
+
+def test_an_empty_password_is_rejected_rather_than_wiping(client, no_mail_env):
+	save_account(client)
+
+	response = save_account(client, password="")
+
+	assert response.status_code == 422
+
+
+def test_the_stored_mailbox_beats_the_environment(client, db_session, monkeypatch):
+	# Otherwise saving credentials in the UI appears to do nothing on a container
+	# that already sets the variables.
+	monkeypatch.setenv("ARTRACKER_MAIL_HOST", "env.example.test")
+	monkeypatch.setenv("ARTRACKER_MAIL_USER", "env@example.test")
+	monkeypatch.setenv("ARTRACKER_MAIL_PASSWORD", "envpass")
+	save_account(client, host="db.example.test")
+
+	assert resolve_mail_config(db_session).host == "db.example.test"
+
+
+def test_the_environment_is_used_when_nothing_is_stored(db_session, monkeypatch):
+	# Keeps existing Docker deployments working untouched.
+	monkeypatch.setenv("ARTRACKER_MAIL_HOST", "env.example.test")
+	monkeypatch.setenv("ARTRACKER_MAIL_USER", "env@example.test")
+	monkeypatch.setenv("ARTRACKER_MAIL_PASSWORD", "envpass")
+
+	assert resolve_mail_config(db_session).host == "env.example.test"
+
+
+def test_clearing_the_mailbox_falls_back_to_the_environment(client, db_session, monkeypatch):
+	monkeypatch.setenv("ARTRACKER_MAIL_HOST", "env.example.test")
+	monkeypatch.setenv("ARTRACKER_MAIL_USER", "env@example.test")
+	monkeypatch.setenv("ARTRACKER_MAIL_PASSWORD", "envpass")
+	save_account(client, host="db.example.test")
+
+	assert client.delete("/api/mail/account").status_code == 204
+
+	assert resolve_mail_config(db_session).host == "env.example.test"
+
+
+def test_clearing_a_mailbox_that_was_never_set_404s(client, no_mail_env):
+	assert client.delete("/api/mail/account").status_code == 404
+
+
+def test_a_saved_mailbox_makes_polling_possible(client, db_session, no_mail_env):
+	# Without a stored account and without the env vars, /poll 503s. Saving one
+	# is what turns the feature on.
+	assert client.post("/api/mail/poll").status_code == 503
+
+	save_account(client)
+
+	# Now it gets as far as trying to reach the mailbox, which fails at connect
+	# rather than at configuration.
+	assert client.post("/api/mail/poll").status_code == 502

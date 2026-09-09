@@ -12,6 +12,18 @@ def utcnow() -> datetime:
 def normalize_handle(handle: str) -> str:
 	return handle.strip().lower()
 
+# Platforms the app ships knowing how to read mail for. Lives here rather than in
+# database.py so the Platform model can consult it without importing the module
+# that imports it — database.py already depends on this one.
+#
+# The sender domain is a fact about the platform, not a preference; nobody should
+# have to look up "creator.patreon.com" by hand.
+PREDEFINED_PLATFORMS: list[tuple[str, str]] = [
+	("Patreon - Mail", "creator.patreon.com"),
+]
+
+_PRESET_NAMES = {name.lower() for name, _ in PREDEFINED_PLATFORMS}
+
 class Base(DeclarativeBase):
 	pass
 
@@ -93,6 +105,14 @@ class Platform(Base):
 	# link-only platforms coexist happily.
 	mail_domain: Mapped[str | None] = mapped_column(String(255), unique=True)
 
+	# Seeded platforms are refused deletion. Deleting one used to "work" and then
+	# have it reappear on the next restart, which reads as the app ignoring you.
+	# Derived from the seed list rather than stored, so there's no column to fall
+	# out of step with it and no migration to add one.
+	@property
+	def is_preset(self) -> bool:
+		return self.name is not None and self.name.lower() in _PRESET_NAMES
+
 class Tracker(Base):
 	__tablename__ = "trackers"
 
@@ -159,6 +179,34 @@ class Update(Base):
 	external_ref: Mapped[str] = mapped_column(String(998), nullable=False, unique=True)
 	summary: Mapped[str] = mapped_column(String(1000), nullable=True)
 	detected_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+class MailAccount(Base):
+	"""The gathering mailbox's credentials. At most one row, always id 1.
+
+	A single row rather than a key/value settings table because these five fields
+	are only ever read and written together, and a table with one row is easier to
+	reason about than five loose strings.
+
+	**The password is write-only above this layer.** No response model exposes it,
+	the backup document doesn't carry it, and the only way to change it is to send
+	a new one. That matters more here than in most apps: every endpoint is
+	unauthenticated, so a field that leaks into a GET is a field served to anyone
+	who can reach the container.
+
+	It is still plaintext at rest. Encrypting it would mean storing the key beside
+	the database, which protects against nothing real — the honest mitigation is a
+	dedicated mailbox that receives only forwarded notifications, so the worst case
+	is losing that account rather than a real one.
+	"""
+	__tablename__ = "mail_account"
+
+	id: Mapped[int] = mapped_column(primary_key=True)
+	host: Mapped[str] = mapped_column(String(255), nullable=False)
+	port: Mapped[int] = mapped_column(default=993)
+	username: Mapped[str] = mapped_column(String(320), nullable=False)
+	password: Mapped[str] = mapped_column(String(1000), nullable=False)
+	mailbox: Mapped[str] = mapped_column(String(255), default="INBOX")
+	updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 class UnmatchedMail(Base):
 	"""Mail that looked like a notification but resolved to no tracker.

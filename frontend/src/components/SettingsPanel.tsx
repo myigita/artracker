@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react';
-import type { PollResult, UnmatchedMail } from '../api';
-import { dismissUnmatchedMail, errorDetail, getUnmatchedMail, pollMail } from '../api';
+import type { MailAccount, PollResult, UnmatchedMail } from '../api';
+import {
+	clearMailAccount,
+	dismissUnmatchedMail,
+	errorDetail,
+	getMailAccount,
+	getUnmatchedMail,
+	pollMail,
+	setMailAccount,
+} from '../api';
+import MailboxForm from './MailboxForm';
 
 type Props = {
 	// Polling can create updates, which changes every tracker's badge.
@@ -13,6 +22,7 @@ type Props = {
 // read when the settings aren't matching what you expected.
 export default function SettingsPanel({ onPolled }: Props) {
 	const [unmatched, setUnmatched] = useState<UnmatchedMail[]>([]);
+	const [account, setAccount] = useState<MailAccount | null>(null);
 	const [polling, setPolling] = useState(false);
 	const [result, setResult] = useState<PollResult | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -23,6 +33,7 @@ export default function SettingsPanel({ onPolled }: Props) {
 
 	useEffect(() => {
 		refresh().catch(() => setError('Could not load unmatched mail.'));
+		getMailAccount().then(setAccount).catch(() => setAccount(null));
 	}, []);
 
 	function handlePoll() {
@@ -52,17 +63,23 @@ export default function SettingsPanel({ onPolled }: Props) {
 
 	return (
 		<div className="flex flex-col gap-6">
+			<MailboxForm
+				account={account}
+				onSaved={(saved) => {
+					setAccount(saved);
+					setResult(null);
+				}}
+				onSave={setMailAccount}
+				onClear={clearMailAccount}
+				onCleared={() => getMailAccount().then(setAccount)}
+			/>
+
 			<section>
-				<h2 className="font-semibold text-[var(--text-h)]">Mailbox</h2>
+				<h2 className="font-semibold text-[var(--text-h)]">Check for updates</h2>
 				<p className="mt-1 text-sm text-[var(--text)]">
 					Reads the gathering mailbox and records an update for every notification
 					that matches a tracker. Safe to run as often as you like — messages
 					already seen are ignored.
-				</p>
-				<p className="mt-2 text-sm text-[var(--text)]">
-					Which mailbox is set by the <code className="text-xs">ARTRACKER_MAIL_*</code>{' '}
-					environment variables, not here — the password would otherwise sit in a
-					database that every endpoint can read.
 				</p>
 				<button
 					type="button"

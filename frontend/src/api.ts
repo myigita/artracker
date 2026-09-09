@@ -34,6 +34,9 @@ export type Platform = {
 	// Sender domain of this platform's notification mail, or null for a plain
 	// saved link with no automatic updates.
 	mail_domain: string | null,
+	// Seeded by the app and refused deletion — the backend recreates it on every
+	// start, so deleting would only appear to work.
+	is_preset: boolean,
 	date_created: string,
 };
 
@@ -206,6 +209,42 @@ export type PollResult = {
 	duplicates: number,
 	unmatched: number,
 };
+
+// Note the absence of a password field: the API never sends one back. The form
+// starts blank and only submits a password when the user is actually changing it.
+export type MailAccount = {
+	host: string,
+	port: number,
+	username: string,
+	mailbox: string,
+	has_password: boolean,
+	// Where the mailbox currently in effect came from. "environment" means the
+	// container was configured with ARTRACKER_MAIL_* and nothing is stored.
+	source: 'database' | 'environment' | 'unset',
+};
+
+export type MailAccountIn = {
+	host: string,
+	port: number,
+	username: string,
+	mailbox: string,
+	// Omitted entirely to keep the stored password.
+	password?: string,
+};
+
+export async function getMailAccount(): Promise<MailAccount> {
+	const response = await api.get<MailAccount>('/mail/account');
+	return response.data;
+}
+
+export async function setMailAccount(data: MailAccountIn): Promise<MailAccount> {
+	const response = await api.put<MailAccount>('/mail/account', data);
+	return response.data;
+}
+
+export async function clearMailAccount(): Promise<void> {
+	await api.delete('/mail/account');
+}
 
 export async function getTrackerUpdates(id: number): Promise<Update[]> {
 	const response = await api.get<Update[]>(`/trackers/${id}/updates`);

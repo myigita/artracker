@@ -136,7 +136,7 @@ export default function SubjectHandles({ subject, onChanged }: Props) {
 									setAdding(false);
 								}
 							}}
-							placeholder="peargor"
+							placeholder="handle"
 							aria-label={`New handle for ${subject.name}`}
 							className="w-32 rounded-full border border-[var(--border)] bg-transparent px-2.5 py-1 text-xs text-[var(--text-h)] outline-none transition-colors focus:border-[var(--accent-border)] disabled:opacity-40 sm:w-40"
 						/>

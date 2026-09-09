@@ -140,3 +140,43 @@ def test_import_allows_many_platforms_without_a_domain(client):
 
 	assert response.status_code == 200
 	assert response.json()["platforms_added"] == 3
+
+
+# ---- built-in platforms -----------------------------------------------------
+
+def test_a_seeded_platform_reports_itself_as_preset(client):
+	# is_preset is derived from the name against the seed list, so creating one
+	# by that name is enough — no need to run the seeder.
+	body = client.post("/api/platforms/", json={"name": "Patreon - Mail"}).json()
+
+	assert body["is_preset"] is True
+
+
+def test_an_ordinary_platform_is_not_preset(client, platform):
+	assert platform["is_preset"] is False
+
+
+def test_a_preset_platform_cannot_be_deleted(client):
+	# Seeding recreates it on every boot, so allowing the delete meant the row
+	# vanished and then reappeared — which reads as the app ignoring you.
+	created = client.post("/api/platforms/", json={"name": "Patreon - Mail"}).json()
+
+	response = client.delete(f"/api/platforms/{created['id']}")
+
+	assert response.status_code == 409
+	assert "built in" in response.json()["detail"]
+	assert len(client.get("/api/platforms/").json()) == 1
+
+
+def test_the_preset_check_ignores_case(client):
+	# Seeding matches names case-insensitively and adopts an existing row, so the
+	# protection has to cover the same spellings or an adopted platform stays
+	# deletable and comes straight back.
+	created = client.post("/api/platforms/", json={"name": "patreon - mail"}).json()
+
+	assert created["is_preset"] is True
+	assert client.delete(f"/api/platforms/{created['id']}").status_code == 409
+
+
+def test_ordinary_platforms_are_still_deletable(client, platform):
+	assert client.delete(f"/api/platforms/{platform['id']}").status_code == 204

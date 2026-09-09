@@ -27,9 +27,12 @@ from datetime import datetime, timezone
 from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from .database import get_db
 from .models import (
+	MailAccount,
 	Platform,
 	Subject,
 	SubjectHandle,
@@ -183,14 +186,35 @@ def fetch_unseen(config: MailConfig) -> list[IncomingMail]:
 	return messages
 
 
-def get_mail_config() -> MailConfig | None:
-	"""Dependency wrapper around mail_config_from_env.
+def resolve_mail_config(db: Session) -> MailConfig | None:
+	"""The mailbox to poll: the stored account if there is one, else the environment.
 
-	Separate from the fetcher so a test can supply a dummy config without also
-	having to fake the environment — the route checks the config before it ever
-	calls the fetcher, so overriding only one of the two isn't enough.
+	Database first so the Settings page wins over whatever the container was
+	started with — otherwise saving credentials in the UI would appear to do
+	nothing on a deployment that already sets the variables. The environment stays
+	as a fallback so existing Docker setups keep working untouched, and so the app
+	can be configured before it has a database worth writing to.
 	"""
+	account = db.query(MailAccount).first()
+	if account and account.host and account.username and account.password:
+		return MailConfig(
+			host=account.host,
+			user=account.username,
+			password=account.password,
+			port=account.port,
+			mailbox=account.mailbox or "INBOX",
+		)
 	return mail_config_from_env()
+
+
+def get_mail_config(db: Session = Depends(get_db)) -> MailConfig | None:
+	"""Dependency wrapper, kept separate from the fetcher.
+
+	A test can supply a dummy config without also faking the environment — the
+	route checks the config before it ever calls the fetcher, so overriding only
+	one of the two isn't enough.
+	"""
+	return resolve_mail_config(db)
 
 
 def get_mail_fetcher():
