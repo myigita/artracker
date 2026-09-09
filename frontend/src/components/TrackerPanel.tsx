@@ -19,20 +19,20 @@ import NameList from './NameList';
 import SubjectCategorySelect from './SubjectCategorySelect';
 import SubjectHandles from './SubjectHandles';
 import BackupPanel from './BackupPanel';
-import MailPanel from './MailPanel';
+import SettingsPanel from './SettingsPanel';
 import TitleBar from './TitleBar';
 
 // Only one form is open at a time, so a single value beats four booleans —
 // it makes "these are mutually exclusive" true by construction.
 type OpenForm = 'tracker' | 'subject' | 'platform' | 'category' | null;
-type Tab = 'trackers' | 'subjects' | 'platforms' | 'categories' | 'mail' | 'backup';
+type Tab = 'trackers' | 'subjects' | 'platforms' | 'categories' | 'settings' | 'backup';
 
 const TABS: { id: Tab; label: string }[] = [
 	{ id: 'trackers', label: 'Trackers' },
 	{ id: 'subjects', label: 'Subjects' },
 	{ id: 'platforms', label: 'Platforms' },
 	{ id: 'categories', label: 'Categories' },
-	{ id: 'mail', label: 'Mail' },
+	{ id: 'settings', label: 'Settings' },
 	{ id: 'backup', label: 'Backup' },
 ];
 
@@ -128,7 +128,7 @@ export default function TrackerPanel() {
 		platforms: platforms.length,
 		categories: categories.length,
 		// Both are pairs of actions rather than lists, so neither has a count.
-		mail: null,
+		settings: null,
 		backup: null,
 	};
 
@@ -138,7 +138,7 @@ export default function TrackerPanel() {
 		subjects: 'subject',
 		platforms: 'platform',
 		categories: 'category',
-		mail: null,
+		settings: null,
 		backup: null,
 	};
 
@@ -147,7 +147,7 @@ export default function TrackerPanel() {
 		subjects: '+ Add subject',
 		platforms: '+ Add platform',
 		categories: '+ Add category',
-		mail: '',
+		settings: '',
 		backup: '',
 	};
 
@@ -288,8 +288,8 @@ export default function TrackerPanel() {
 					/>
 				)}
 
-				{!loading && !loadError && tab === 'mail' && (
-					<MailPanel onPolled={fetchTrackers} />
+				{!loading && !loadError && tab === 'settings' && (
+					<SettingsPanel onPolled={fetchTrackers} />
 				)}
 
 				{!loading && !loadError && tab === 'backup' && (

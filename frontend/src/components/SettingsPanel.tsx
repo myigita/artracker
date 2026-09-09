@@ -7,7 +7,11 @@ type Props = {
 	onPolled: () => void;
 };
 
-export default function MailPanel({ onPolled }: Props) {
+// The mailbox lives under Settings rather than a tab of its own: it's how the
+// app is configured to find updates, not a thing you browse. "Unmatched" sits
+// with it because it's the diagnostic for that same configuration — a list you
+// read when the settings aren't matching what you expected.
+export default function SettingsPanel({ onPolled }: Props) {
 	const [unmatched, setUnmatched] = useState<UnmatchedMail[]>([]);
 	const [polling, setPolling] = useState(false);
 	const [result, setResult] = useState<PollResult | null>(null);
@@ -49,11 +53,16 @@ export default function MailPanel({ onPolled }: Props) {
 	return (
 		<div className="flex flex-col gap-6">
 			<section>
-				<h2 className="font-semibold text-[var(--text-h)]">Check for updates</h2>
+				<h2 className="font-semibold text-[var(--text-h)]">Mailbox</h2>
 				<p className="mt-1 text-sm text-[var(--text)]">
 					Reads the gathering mailbox and records an update for every notification
 					that matches a tracker. Safe to run as often as you like — messages
 					already seen are ignored.
+				</p>
+				<p className="mt-2 text-sm text-[var(--text)]">
+					Which mailbox is set by the <code className="text-xs">ARTRACKER_MAIL_*</code>{' '}
+					environment variables, not here — the password would otherwise sit in a
+					database that every endpoint can read.
 				</p>
 				<button
 					type="button"

@@ -76,7 +76,13 @@ export default function NameList<T extends NameItem>({
 					return (
 						<div
 							key={item.id}
-							className="flex items-center gap-3 rounded-lg border border-[var(--border)] px-4 py-3"
+							// flex-wrap because the subjects row carries the most: name,
+							// handles with its label, a category select, a usage count and
+							// a delete. On a 375px screen that overflowed the viewport
+							// horizontally, and the alternative — hiding the handles label
+							// on mobile — puts the control back to being an unexplained box
+							// exactly where there's least room to guess.
+							className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-[var(--border)] px-4 py-3"
 						>
 							<span className="truncate font-medium text-[var(--text-h)]">
 								{item.name}

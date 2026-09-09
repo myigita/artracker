@@ -54,7 +54,8 @@ export default function SubjectHandles({ subject, onChanged }: Props) {
 			// hover something you have no reason to hover. A visible control also
 			// gives the disabled/"Saving…" state somewhere to live.
 			<form onSubmit={handleSubmit} className="flex shrink-0 flex-col gap-1">
-				<div className="flex items-center gap-1">
+				<div className="flex items-center gap-1.5">
+					<Label />
 					<input
 						autoFocus
 						value={value}
@@ -98,18 +99,33 @@ export default function SubjectHandles({ subject, onChanged }: Props) {
 	}
 
 	return (
-		<button
-			type="button"
-			onClick={startEditing}
-			aria-label={`Edit handles for ${subject.name}`}
-			title={
-				subject.handles.length
-					? `Matched against notification mail from ${subject.handles.join(', ')}`
-					: 'Add a handle to match this subject against notification mail'
-			}
-			className="shrink-0 cursor-pointer truncate rounded-md border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text)] transition-colors hover:border-[var(--accent-border)] hover:text-[var(--text-h)]"
-		>
-			{subject.handles.length ? subject.handles.join(', ') : '+ handle'}
-		</button>
+		<span className="flex shrink-0 items-center gap-1.5">
+			<Label />
+			<button
+				type="button"
+				onClick={startEditing}
+				aria-label={`Edit handles for ${subject.name}`}
+				title={
+					subject.handles.length
+						? `Matched against notification mail from ${subject.handles.join(', ')}`
+						: 'Add a handle to match this subject against notification mail'
+				}
+				className="max-w-32 cursor-pointer truncate rounded-md border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text)] transition-colors hover:border-[var(--accent-border)] hover:text-[var(--text-h)] sm:max-w-44"
+			>
+				{subject.handles.length ? subject.handles.join(', ') : '+ Add'}
+			</button>
+		</span>
+	);
+}
+
+// Without this the control is a dashed box reading "peargor", which says nothing
+// about what it is or why it matters. The category control next to it needs no
+// label because its value *is* a category name; a handle looks like arbitrary
+// text until something names it.
+function Label() {
+	return (
+		<span aria-hidden="true" className="shrink-0 text-xs text-[var(--text)]">
+			Handles
+		</span>
 	);
 }
