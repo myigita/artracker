@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { Subject } from '../api';
 import { errorDetail, updateSubject } from '../api';
 
@@ -15,6 +15,7 @@ export default function SubjectHandles({ subject, onChanged }: Props) {
 	const [value, setValue] = useState('');
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const hintId = useId();
 
 	function save(handles: string[], onSuccess?: () => void) {
 		setSaving(true);
@@ -49,33 +50,58 @@ export default function SubjectHandles({ subject, onChanged }: Props) {
 
 	return (
 		<div>
-			<h3 className="text-sm font-medium text-[var(--text-h)]">Handles</h3>
-			<p className="mt-0.5 text-xs text-[var(--text)]">
-				What this subject is called on the platforms it posts to. Matched against
-				the sender of notification mail — <code>peargor</code> catches mail from{' '}
-				<code>peargor@creator.patreon.com</code>.
-			</p>
+			<div className="flex items-center gap-1.5">
+				<h3 className="text-sm font-medium text-[var(--text-h)]">Handles</h3>
+
+				{/* A named group so it can't be triggered by the pills' own `group`. */}
+				<span className="group/hint relative inline-flex">
+					<button
+						type="button"
+						aria-label="What are handles?"
+						aria-describedby={hintId}
+						className="flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-[var(--border)] text-[10px] leading-none text-[var(--text)] transition-colors hover:border-[var(--accent-border)] hover:text-[var(--text-h)] focus-visible:border-[var(--accent-border)] focus-visible:text-[var(--text-h)]"
+					>
+						?
+					</button>
+					<span
+						id={hintId}
+						role="tooltip"
+						// focus-within as well as hover, so a keyboard can reach it.
+						// pointer-events-none stops the tooltip from eating hovers meant
+						// for whatever sits underneath it.
+						className="pointer-events-none absolute left-0 top-full z-20 mt-1.5 w-64 rounded-md border border-[var(--border)] bg-[var(--bg)] p-2 text-xs leading-snug text-[var(--text)] opacity-0 shadow-[var(--shadow)] transition-opacity group-hover/hint:opacity-100 group-focus-within/hint:opacity-100 motion-reduce:transition-none"
+					>
+						What this subject is called on the platforms it posts to. Matched
+						against the sender of notification mail — <code>peargor</code> catches
+						mail from <code>peargor@creator.patreon.com</code>.
+					</span>
+				</span>
+			</div>
 
 			<div className="mt-3 flex flex-wrap items-center gap-2">
 				{subject.handles.map((handle) => (
+					// justify-center with symmetric padding, so the handle sits centred
+					// while nothing else is showing.
 					<span
 						key={handle}
-						className="group flex items-center gap-1 rounded-full border border-[var(--border)] py-1 pl-2.5 pr-1.5 text-xs text-[var(--text-h)]"
+						className="group relative inline-flex items-center justify-center rounded-full border border-[var(--border)] px-3 py-1 text-xs text-[var(--text-h)]"
 					>
-						{handle}
+						{/* Shifts left to clear room for the ×. The × is absolutely
+						    positioned so it costs no layout width, which is what keeps the
+						    pill from growing as it appears — the text moves instead. */}
+						<span className="-translate-x-1.5 transition-transform motion-reduce:transition-none [@media(hover:hover)]:translate-x-0 [@media(hover:hover)]:group-focus-within:-translate-x-1.5 [@media(hover:hover)]:group-hover:-translate-x-1.5">
+							{handle}
+						</span>
 						<button
 							type="button"
 							onClick={() => handleRemove(handle)}
 							disabled={saving}
 							aria-label={`Remove handle ${handle}`}
-							// Hidden until hover, as asked — but ONLY where hovering exists.
-							// On a touch screen there is no hover state to enter, so outside
-							// that media query the button stays visible; otherwise a handle
-							// could never be removed on a phone.
-							//
-							// group-focus-within, not focus-visible, because keyboards don't
-							// hover either and the × has to appear when focus reaches it.
-							className="cursor-pointer rounded-full p-0.5 text-[var(--text)] transition-opacity hover:text-red-500 focus-visible:text-red-500 disabled:cursor-not-allowed [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100"
+							// Visible by default and hidden only where hover exists: a touch
+							// screen has no hover state to enter, so the reverse would leave
+							// the handle permanently unremovable on a phone. Keyboards don't
+							// hover either, hence group-focus-within.
+							className="absolute right-1.5 cursor-pointer rounded-full p-0.5 text-[var(--text)] transition-opacity hover:text-red-500 focus-visible:text-red-500 disabled:cursor-not-allowed motion-reduce:transition-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100"
 						>
 							<svg
 								width="12"
