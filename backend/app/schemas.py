@@ -53,6 +53,13 @@ Name = Annotated[str, Field(min_length=1, max_length=255)]
 Url = Annotated[str, Field(min_length=1, max_length=2000)]
 Description = Annotated[str, Field(max_length=1000)]
 
+# Same as Url but permits "". Whether a tracker may go without one depends on its
+# platform, which Pydantic can't see — so blank has to reach the route rather than
+# being rejected here as a 422. With min_length on it, clearing a URL was
+# impossible and a blank one failed with a schema error instead of the actual
+# reason.
+BlankableUrl = Annotated[str, Field(max_length=2000)]
+
 # Serialized as "handles", but read from either name — and the ORDER is
 # load-bearing.
 #
@@ -133,14 +140,19 @@ class TrackerIn(BaseModel):
     name: Name | None = None
     subject_name: Name
     platform_name: Name
-    url: Url
+    # Optional here, but the route still requires one for platforms that aren't
+    # mail-tracked — a saved link with no link does nothing. Only a platform with
+    # a mail_domain has a reason to exist without one.
+    url: BlankableUrl | None = None
     description: Description | None = None
 
 class TrackerUpdate(BaseModel):
     model_config = _STRICT
 
     name: Name | None = None
-    url: Url | None = None
+    # Blank is meaningful: it clears the URL, which the route allows only on a
+    # mail-tracked platform.
+    url: BlankableUrl | None = None
     description: Description | None = None
     # Writable so the UI can undo an accidental check. null is a real value
     # here — it restores a tracker that had never been checked before.

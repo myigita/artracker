@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import type { Tracker, Update } from '../api';
-import { checkTracker, deleteTracker, getTrackerUpdates, updateTracker } from '../api';
+import {
+	checkTracker,
+	deleteTracker,
+	errorDetail,
+	getTrackerUpdates,
+	updateTracker,
+} from '../api';
 
 type Props = {
 	tracker: Tracker;
@@ -65,6 +71,22 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 			.catch(() => {});
 	}
 
+	// A tracker on a mail-tracked platform can have no URL, so there's no link to
+	// click and therefore nothing to stamp last_checked — which is what clears the
+	// unread badge. This is that stamp on its own. Unlike handleOpen it reports
+	// failure, because here nothing else happened to mask it.
+	function handleMarkChecked() {
+		const previous = tracker.last_checked;
+
+		setError(null);
+		checkTracker(tracker.id)
+			.then(() => {
+				setUndo({ previous });
+				onChecked();
+			})
+			.catch(() => setError('Could not mark this as checked.'));
+	}
+
 	function handleUndo() {
 		if (!undo) return;
 
@@ -107,12 +129,15 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 
 	function handleSave(event: React.FormEvent) {
 		event.preventDefault();
-		if (!name.trim() || !url.trim()) return;
+		if (!name.trim()) return;
 
 		setSaving(true);
 		setError(null);
 		updateTracker(tracker.id, {
 			name: name.trim(),
+			// Sent even when blank. Whether this tracker may go without a URL
+			// depends on its platform, which the card doesn't know — the backend
+			// does, and it answers with a message worth showing.
 			url: url.trim(),
 			description: description.trim() || null,
 		})
@@ -120,7 +145,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 				setEditing(false);
 				onUpdated();
 			})
-			.catch(() => setError('Could not save changes.'))
+			.catch((err) => setError(errorDetail(err) ?? 'Could not save changes.'))
 			.finally(() => setSaving(false));
 	}
 
@@ -153,7 +178,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 				<div className="mt-3 flex items-center gap-2">
 					<button
 						type="submit"
-						disabled={saving || !name.trim() || !url.trim()}
+						disabled={saving || !name.trim()}
 						className="cursor-pointer rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 					>
 						{saving ? 'Saving…' : 'Save'}
@@ -198,17 +223,29 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 						{tracker.subject_category}
 					</span>
 				)}
-				<a
-					href={tracker.url}
-					target="_blank"
-					rel="noreferrer"
-					onClick={handleOpen}
-					title={tracker.url}
-					aria-label={`Open ${tracker.name}`}
-					className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-colors hover:text-[var(--accent)] focus-visible:text-[var(--accent)]"
-				>
-					<GlobeIcon />
-				</a>
+				{tracker.url ? (
+					<a
+						href={tracker.url}
+						target="_blank"
+						rel="noreferrer"
+						onClick={handleOpen}
+						title={tracker.url}
+						aria-label={`Open ${tracker.name}`}
+						className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-colors hover:text-[var(--accent)] focus-visible:text-[var(--accent)]"
+					>
+						<GlobeIcon />
+					</a>
+				) : (
+					<button
+						type="button"
+						onClick={handleMarkChecked}
+						title="Mark as checked — there's no link on this tracker"
+						aria-label={`Mark ${tracker.name} as checked`}
+						className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-colors hover:text-[var(--accent)] focus-visible:text-[var(--accent)]"
+					>
+						<CheckIcon />
+					</button>
+				)}
 				<span className="ml-auto shrink-0 text-xs text-[var(--text)]">
 					{timeAgo(tracker.last_checked)}
 				</span>
@@ -291,6 +328,22 @@ function CloseIcon() {
 			aria-hidden="true"
 		>
 			<path d="M18 6L6 18M6 6l12 12" />
+		</svg>
+	);
+}
+
+function CheckIcon() {
+	return (
+		<svg
+			width="16"
+			height="16"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			aria-hidden="true"
+		>
+			<path d="M20 6L9 17l-5-5" />
 		</svg>
 	);
 }

@@ -47,7 +47,16 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 	// The name we'll actually send, whichever way it was chosen.
 	const subjectName = subjectChoice === NEW ? newSubject.trim() : subjectChoice;
 	const platformName = platformChoice === NEW ? newPlatform.trim() : platformChoice;
-	const canSubmit = Boolean(subjectName && platformName && url.trim()) && !saving;
+
+	// A platform that receives notification mail has somewhere for updates to come
+	// from, so a tracker on it is useful with no link at all. Anything else is a
+	// saved link, and a saved link with no link does nothing. A brand-new platform
+	// has no mail domain yet, so it falls on the required side.
+	const selectedPlatform = platforms.find((p) => p.name === platformName);
+	const urlRequired = !selectedPlatform?.mail_domain;
+
+	const canSubmit =
+		Boolean(subjectName && platformName && (url.trim() || !urlRequired)) && !saving;
 
 	async function handleSubmit(event: React.FormEvent) {
 		// Without this the browser does a full page reload and the SPA dies.
@@ -65,6 +74,8 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 			await createTracker({
 				subject_name: subjectName,
 				platform_name: platformName,
+				// Sent even when blank: the backend decides whether this platform
+				// can go without one, so the rule lives in exactly one place.
 				url: url.trim(),
 				...(name.trim() && { name: name.trim() }),
 				...(description.trim() && { description: description.trim() }),
@@ -135,7 +146,9 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 			</div>
 
 			<div className="mt-3">
-				<label className={labelClass} htmlFor="url">URL</label>
+				<label className={labelClass} htmlFor="url">
+					{urlRequired ? 'URL' : 'URL (optional)'}
+				</label>
 				<input
 					id="url"
 					value={url}
@@ -143,6 +156,12 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 					placeholder="https://…"
 					className={inputClass}
 				/>
+				{!urlRequired && (
+					<p className="mt-1 text-xs text-[var(--text)]">
+						{platformName} is tracked by email, so this only matters if you also
+						want somewhere to click through to.
+					</p>
+				)}
 			</div>
 
 			<div className="mt-3 flex flex-col gap-3 sm:flex-row">
@@ -152,7 +171,7 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 						id="name"
 						value={name}
 						onChange={(e) => setName(e.target.value)}
-						placeholder="Defaults to “Subject - Platform”"
+						placeholder="Defaults to “Subject (Platform)”"
 						className={inputClass}
 					/>
 				</div>

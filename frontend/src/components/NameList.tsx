@@ -142,32 +142,44 @@ export default function NameList<T extends NameItem>({
 									<span className="ml-auto shrink-0 text-xs text-[var(--text)]">
 										{count === 1 ? `1 ${usageLabel}` : `${count} ${usageLabel}s`}
 									</span>
-									<button
-										type="button"
-										onClick={() => handleDelete(item)}
-										disabled={busyId === item.id || protectedRow}
-										aria-label={`Delete ${item.name}`}
-										title={
-											protectedRow
-												? protectedHint
-												: count > 0
+									{/* The × is omitted for protected rows rather than disabled — a
+								    greyed-out one still reads as something you might be able to
+								    click. A label takes its slot so the row stays aligned and
+								    the absence explains itself instead of looking like a bug. */}
+									{protectedRow && (
+										<span
+											title={protectedHint}
+											className="shrink-0 rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text)]"
+										>
+											Built in
+										</span>
+									)}
+									{!protectedRow && (
+										<button
+											type="button"
+											onClick={() => handleDelete(item)}
+											disabled={busyId === item.id}
+											aria-label={`Delete ${item.name}`}
+											title={
+												count > 0
 													? `Still has ${usageLabel}s — ${blockedHint.toLowerCase()}`
 													: `Delete ${item.name}`
-										}
-										className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-colors hover:text-red-500 focus-visible:text-red-500 disabled:opacity-40"
-									>
-										<svg
-											width="16"
-											height="16"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="2"
-											aria-hidden="true"
+											}
+											className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-colors hover:text-red-500 focus-visible:text-red-500 disabled:opacity-40"
 										>
-											<path d="M18 6L6 18M6 6l12 12" />
-										</svg>
-									</button>
+											<svg
+												width="16"
+												height="16"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												strokeWidth="2"
+												aria-hidden="true"
+											>
+												<path d="M18 6L6 18M6 6l12 12" />
+											</svg>
+										</button>
+									)}
 								</div>
 
 								{renderExpanded && isOpen && (

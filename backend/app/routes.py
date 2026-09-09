@@ -83,13 +83,28 @@ def create_tracker(tracker_in: TrackerIn, db: Session = Depends(get_db)):
 	if not platform:
 		raise HTTPException(status_code=400, detail="Invalid platform")
 
-	name = tracker_in.name if tracker_in.name else f"{tracker_in.subject_name} - {tracker_in.platform_name}"
+	# A mail-tracked platform has somewhere for updates to come from, so a tracker
+	# on one is useful with no link at all. Everything else is a saved link, and a
+	# saved link with no link does nothing.
+	url = (tracker_in.url or "").strip()
+	if not url and not platform.mail_domain:
+		raise HTTPException(
+			status_code=400,
+			detail=f"A URL is required for '{platform.name}'",
+		)
+
+	name = tracker_in.name if tracker_in.name else f"{tracker_in.subject_name} ({tracker_in.platform_name})"
 
 	tracker = Tracker(
 		name=name,
 		subject=subject,
 		platform=platform,
-		url=tracker_in.url,
+		# Empty string rather than NULL. The column is NOT NULL, and SQLite can't
+		# drop that without rebuilding the table — while setting nullable=True on
+		# the model alone would work on a fresh database and raise IntegrityError
+		# on every migrated one, which the test suite could never catch because
+		# conftest builds its tables from the current models every run.
+		url=url,
 		description=tracker_in.description
 	)
 	db.add(tracker)
@@ -114,8 +129,15 @@ def update_tracker(tracker_id: int, tracker_update: TrackerUpdate, db: Session =
 	# on a tracker that had never been checked before.
 	if "name" in changes and not changes["name"]:
 		raise HTTPException(status_code=400, detail="Name cannot be empty")
+	# Clearing the URL is allowed only where one was never needed — same rule as
+	# create. A null would hit the NOT NULL column, so it lands as "" either way.
 	if "url" in changes and not changes["url"]:
-		raise HTTPException(status_code=400, detail="URL cannot be empty")
+		if not tracker.platform.mail_domain:
+			raise HTTPException(
+				status_code=400,
+				detail=f"A URL is required for '{tracker.platform.name}'",
+			)
+		changes["url"] = ""
 
 	for field, value in changes.items():
 		setattr(tracker, field, value)
