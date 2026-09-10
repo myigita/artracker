@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, ForeignKey, DateTime
+from sqlalchemy import Boolean, String, ForeignKey, DateTime
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 def utcnow() -> datetime:
@@ -200,6 +200,31 @@ class MailAccount(Base):
 	password: Mapped[str] = mapped_column(String(1000), nullable=False)
 	mailbox: Mapped[str] = mapped_column(String(255), default="INBOX")
 	updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+class PollSchedule(Base):
+	"""When the background poller should run. One row, always id 1.
+
+	Separate from MailAccount rather than a column on it, because the mailbox can
+	come from the environment instead — and then there is no MailAccount row to
+	hang a schedule off. The two are independent settings that happen to concern
+	the same feature.
+
+	`last_run_at` is what makes the schedule survive a restart: the loop asks
+	whether a run is *due* rather than sleeping for the interval, so changing the
+	interval takes effect on the next tick instead of after the current sleep, and
+	a restart doesn't reset the clock.
+	"""
+	__tablename__ = "poll_schedule"
+
+	id: Mapped[int] = mapped_column(primary_key=True)
+	# Off until switched on. A background process that starts reaching out to a
+	# mail server the moment the container boots is not a good default.
+	enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+	interval_minutes: Mapped[int] = mapped_column(default=15)
+	last_run_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+	# A one-line summary of the last pass, or the error it failed with. Without it
+	# a background poller is completely opaque — there is no request to watch fail.
+	last_result: Mapped[str] = mapped_column(String(500), nullable=True)
 
 class UnmatchedMail(Base):
 	"""Mail that looked like a notification but resolved to no tracker.

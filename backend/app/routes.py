@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from fastapi import APIRouter, HTTPException, Depends
 
 from .database import get_db
@@ -12,6 +14,7 @@ from .models import (
 	Category,
 	MailAccount,
 	MatchRule,
+	PollSchedule,
 	Subject,
 	Tracker,
 	Platform,
@@ -42,6 +45,8 @@ from .schemas import (
 	MailAccountOut,
 	MatchRuleIn,
 	PollResult,
+	PollScheduleIn,
+	PollScheduleOut,
 	UnmatchedMailOut,
 	UpdateOut,
 )
@@ -709,3 +714,49 @@ def clear_mail_account(db: Session = Depends(get_db)):
 	# feature outright, which is the point of keeping that path alive.
 	db.delete(account)
 	db.commit()
+
+# The background poller's schedule. Stored rather than passed as an env var so it
+# can be changed from Settings without restarting the container.
+def _schedule(db: Session) -> PollSchedule:
+	"""The single schedule row, created on first read.
+
+	Created lazily rather than seeded at startup so the table stays empty — and
+	the poller stays off — until someone actually looks at the setting.
+	"""
+	schedule = db.query(PollSchedule).first()
+	if schedule is None:
+		schedule = PollSchedule()
+		db.add(schedule)
+		db.commit()
+	return schedule
+
+
+def _schedule_out(schedule: PollSchedule) -> PollScheduleOut:
+	next_run = None
+	if schedule.enabled:
+		# From the last run, not from now, so reading the setting doesn't appear
+		# to push the next run further away.
+		base = schedule.last_run_at or utcnow()
+		next_run = base + timedelta(minutes=schedule.interval_minutes)
+
+	return PollScheduleOut(
+		enabled=schedule.enabled,
+		interval_minutes=schedule.interval_minutes,
+		last_run_at=schedule.last_run_at,
+		last_result=schedule.last_result,
+		next_run_at=next_run,
+	)
+
+
+@mail_router.get("/schedule", response_model=PollScheduleOut)
+def get_poll_schedule(db: Session = Depends(get_db)):
+	return _schedule_out(_schedule(db))
+
+@mail_router.put("/schedule", response_model=PollScheduleOut)
+def set_poll_schedule(payload: PollScheduleIn, db: Session = Depends(get_db)):
+	schedule = _schedule(db)
+	schedule.enabled = payload.enabled
+	schedule.interval_minutes = payload.interval_minutes
+	db.commit()
+
+	return _schedule_out(schedule)

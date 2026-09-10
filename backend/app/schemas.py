@@ -223,6 +223,29 @@ class PollResult(BaseModel):
     unmatched: int
 
 
+class PollScheduleIn(BaseModel):
+    enabled: bool = False
+    # Five minutes is the floor. IMAP servers rate-limit, notification mail
+    # arrives in bursts anyway, and a tighter loop buys nothing but bans. The
+    # ceiling is a day, past which "scheduled" stops meaning anything.
+    interval_minutes: int = Field(default=15, ge=5, le=1440)
+
+
+class PollScheduleOut(BaseModel):
+    enabled: bool
+    interval_minutes: int
+    last_run_at: UtcDatetime | None
+    # A one-line summary of the last pass, or the error it failed with. A
+    # background poller has no request to watch fail, so without this it is
+    # completely opaque.
+    last_result: str | None
+    # Computed rather than stored, so it can't drift out of step with the
+    # interval. Null when the schedule is off.
+    next_run_at: UtcDatetime | None
+
+    model_config = {"from_attributes": True}
+
+
 class MailAccountIn(BaseModel):
     model_config = _STRICT
 

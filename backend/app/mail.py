@@ -20,12 +20,14 @@ Splitting `fetch_unseen` (talks IMAP) from `record_message` (pure database work)
 is deliberate: the matching logic is the part with the bugs in it, and it is
 testable without a mail server anywhere in sight.
 """
+import asyncio
 import email
 import hashlib
 import imaplib
+import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 
@@ -36,6 +38,7 @@ from .database import get_db
 from .models import (
 	MailAccount,
 	MatchRule,
+	PollSchedule,
 	Tracker,
 	UnmatchedMail,
 	Update,
@@ -352,3 +355,101 @@ def record_messages(db: Session, messages: list[IncomingMail]) -> PollOutcome:
 
 	db.commit()
 	return outcome
+
+
+# ---- the background poller --------------------------------------------------
+
+# How often the loop wakes to ask "is a run due yet". Deliberately much shorter
+# than any allowed interval: the loop checks whether enough time has passed rather
+# than sleeping for the whole interval, so changing the setting takes effect
+# within a minute instead of after the current sleep finishes, and a restart
+# doesn't reset the clock.
+TICK_SECONDS = 60
+
+# Nothing shorter is accepted. IMAP servers rate-limit, most notification mail
+# arrives in bursts anyway, and a tighter loop buys nothing but bans.
+MIN_INTERVAL_MINUTES = 5
+
+logger = logging.getLogger(__name__)
+
+
+def run_one_poll(db: Session) -> str:
+	"""One pass, returning the one-line summary stored on the schedule.
+
+	Synchronous and blocking — imaplib is — so callers on the event loop must run
+	it in a thread.
+	"""
+	config = resolve_mail_config(db)
+	if config is None:
+		return "No mailbox is configured"
+
+	messages = fetch_unseen(config)
+	outcome = record_messages(db, messages)
+	return (
+		f"{len(messages)} read, {outcome.recorded} recorded,"
+		f" {outcome.duplicates} already seen, {outcome.unmatched} unmatched"
+	)
+
+
+def _due(schedule: PollSchedule, now: datetime) -> bool:
+	if not schedule.enabled:
+		return False
+	if schedule.last_run_at is None:
+		return True
+	interval = max(schedule.interval_minutes or 0, MIN_INTERVAL_MINUTES)
+	return now - schedule.last_run_at >= timedelta(minutes=interval)
+
+
+def poll_if_due(session_factory) -> str | None:
+	"""Run a pass if the schedule says one is owed. Returns its summary, or None.
+
+	Takes a session factory and opens its own session, which routes are forbidden
+	from doing — see the note in database.py. The reasoning there is about request
+	handlers, where a hand-rolled session both closes before serialization and
+	side-steps the dependency override that points tests at a temporary database.
+	Neither applies to a background task: there is no response to serialize and no
+	request to override, and it cannot borrow a session from a request that isn't
+	happening.
+	"""
+	with session_factory() as db:
+		schedule = db.query(PollSchedule).first()
+		if schedule is None or not _due(schedule, utcnow()):
+			return None
+
+		# Stamped BEFORE the work, not after. A poll that hangs for ten minutes
+		# would otherwise still look overdue on every tick, and each tick would
+		# start another one on top of it.
+		schedule.last_run_at = utcnow()
+		db.commit()
+
+		try:
+			result = run_one_poll(db)
+		except MailError as error:
+			result = f"Failed: {error}"
+		except Exception as error:  # noqa: BLE001 - see below
+			# Deliberately broad. This runs in a loop with nothing above it to
+			# catch anything, so an unexpected failure has to be recorded and
+			# swallowed or the poller dies silently and never runs again.
+			logger.exception("Scheduled mail poll failed")
+			result = f"Failed: {error}"
+
+		schedule.last_result = result[:500]
+		db.commit()
+		return result
+
+
+async def poll_forever(session_factory) -> None:
+	"""The loop itself. Cancelled on shutdown by the lifespan handler."""
+	while True:
+		try:
+			# to_thread because the poll is blocking IMAP and database work; run
+			# inline it would stall every request for the duration.
+			await asyncio.to_thread(poll_if_due, session_factory)
+		except asyncio.CancelledError:
+			raise
+		except Exception:  # noqa: BLE001
+			# poll_if_due already swallows its own failures; this is the last
+			# resort for anything raised outside it, so the loop survives.
+			logger.exception("Mail poller tick failed")
+
+		await asyncio.sleep(TICK_SECONDS)

@@ -10,6 +10,7 @@ from datetime import datetime
 import pytest
 
 from app.mail import IncomingMail, MailConfig, get_mail_config, get_mail_fetcher, parse_message
+from app.models import utcnow
 from app.main import app
 
 # Fixed timestamps rather than utcnow(): the badge compares detected_at against
@@ -477,3 +478,121 @@ def test_a_saved_mailbox_makes_polling_possible(client, db_session, no_mail_env)
 	# Now it gets as far as trying to reach the mailbox, which fails at connect
 	# rather than at configuration.
 	assert client.post("/api/mail/poll").status_code == 502
+
+
+# ---- the background schedule -----------------------------------------------
+
+from datetime import timedelta
+
+from app.mail import MIN_INTERVAL_MINUTES, _due, poll_if_due
+from app.models import PollSchedule
+
+
+def test_the_schedule_starts_off(client):
+	body = client.get("/api/mail/schedule").json()
+
+	# A container that starts reaching out to a mail server the moment it boots
+	# is not a good default.
+	assert body["enabled"] is False
+	assert body["last_run_at"] is None
+	assert body["next_run_at"] is None
+
+
+def test_the_schedule_can_be_turned_on(client):
+	body = client.put(
+		"/api/mail/schedule", json={"enabled": True, "interval_minutes": 30}
+	).json()
+
+	assert body["enabled"] is True
+	assert body["interval_minutes"] == 30
+	assert body["next_run_at"] is not None
+
+
+def test_an_interval_under_five_minutes_is_rejected(client):
+	response = client.put(
+		"/api/mail/schedule", json={"enabled": True, "interval_minutes": 4}
+	)
+
+	assert response.status_code == 422
+
+
+def test_an_absurd_interval_is_rejected(client):
+	assert client.put(
+		"/api/mail/schedule", json={"enabled": True, "interval_minutes": 10000}
+	).status_code == 422
+
+
+def test_a_disabled_schedule_is_never_due():
+	schedule = PollSchedule(enabled=False, interval_minutes=5, last_run_at=None)
+
+	assert _due(schedule, EARLIER) is False
+
+
+def test_a_schedule_that_has_never_run_is_due():
+	schedule = PollSchedule(enabled=True, interval_minutes=15, last_run_at=None)
+
+	assert _due(schedule, EARLIER) is True
+
+
+def test_a_schedule_is_not_due_until_the_interval_has_passed():
+	schedule = PollSchedule(enabled=True, interval_minutes=15, last_run_at=EARLIER)
+
+	assert _due(schedule, EARLIER + timedelta(minutes=14)) is False
+	assert _due(schedule, EARLIER + timedelta(minutes=15)) is True
+
+
+def test_the_floor_applies_even_if_the_row_says_otherwise():
+	# The schema stops anything under five getting in, but a hand-edited database
+	# shouldn't be able to turn this into a busy loop against someone's IMAP server.
+	schedule = PollSchedule(enabled=True, interval_minutes=1, last_run_at=EARLIER)
+
+	assert _due(schedule, EARLIER + timedelta(minutes=2)) is False
+	assert _due(schedule, EARLIER + timedelta(minutes=MIN_INTERVAL_MINUTES)) is True
+
+
+def test_poll_if_due_does_nothing_when_it_is_not_due(client, db_session, no_mail_env):
+	client.put("/api/mail/schedule", json={"enabled": True, "interval_minutes": 5})
+	db_session.query(PollSchedule).update({"last_run_at": utcnow()})
+	db_session.commit()
+
+	assert poll_if_due(lambda: db_session) is None
+
+
+def test_poll_if_due_records_a_result_it_can_show(client, db_session, no_mail_env):
+	# No mailbox configured, so the pass is a no-op — but it still has to leave a
+	# trace. A background poller has no request to watch fail.
+	client.put("/api/mail/schedule", json={"enabled": True, "interval_minutes": 5})
+
+	result = poll_if_due(lambda: db_session)
+
+	assert result == "No mailbox is configured"
+	assert client.get("/api/mail/schedule").json()["last_result"] == result
+
+
+def test_a_failing_poll_is_recorded_rather_than_raised(client, db_session, monkeypatch):
+	"""The loop has nothing above it to catch anything, so a failure has to be
+	swallowed and written down — otherwise the poller dies silently on the first
+	bad night and never runs again."""
+	import app.mail as mail_module
+
+	monkeypatch.setattr(
+		mail_module, "run_one_poll", lambda db: (_ for _ in ()).throw(RuntimeError("boom"))
+	)
+	client.put("/api/mail/schedule", json={"enabled": True, "interval_minutes": 5})
+
+	result = poll_if_due(lambda: db_session)
+
+	assert "boom" in result
+	assert "Failed" in client.get("/api/mail/schedule").json()["last_result"]
+
+
+def test_the_run_is_stamped_before_the_work(client, db_session, no_mail_env):
+	"""A poll that hangs would otherwise look overdue on every tick, and each tick
+	would start another one on top of it."""
+	client.put("/api/mail/schedule", json={"enabled": True, "interval_minutes": 5})
+
+	poll_if_due(lambda: db_session)
+
+	assert client.get("/api/mail/schedule").json()["last_run_at"] is not None
+	# Immediately not due again.
+	assert poll_if_due(lambda: db_session) is None

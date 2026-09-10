@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
-import type { MailAccount, PollResult, UnmatchedMail } from '../api';
+import type { MailAccount, PollResult, PollSchedule, UnmatchedMail } from '../api';
 import {
 	clearMailAccount,
 	dismissUnmatchedMail,
 	errorDetail,
 	getMailAccount,
+	getPollSchedule,
 	getUnmatchedMail,
 	pollMail,
 	setMailAccount,
 } from '../api';
 import MailboxForm from './MailboxForm';
+import PollScheduleForm from './PollScheduleForm';
 
 type Props = {
 	// Polling can create updates, which changes every tracker's badge.
@@ -23,6 +25,7 @@ type Props = {
 export default function SettingsPanel({ onPolled }: Props) {
 	const [unmatched, setUnmatched] = useState<UnmatchedMail[]>([]);
 	const [account, setAccount] = useState<MailAccount | null>(null);
+	const [schedule, setSchedule] = useState<PollSchedule | null>(null);
 	const [polling, setPolling] = useState(false);
 	const [result, setResult] = useState<PollResult | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -34,6 +37,7 @@ export default function SettingsPanel({ onPolled }: Props) {
 	useEffect(() => {
 		refresh().catch(() => setError('Could not load unmatched mail.'));
 		getMailAccount().then(setAccount).catch(() => setAccount(null));
+		getPollSchedule().then(setSchedule).catch(() => setSchedule(null));
 	}, []);
 
 	function handlePoll() {
@@ -74,8 +78,10 @@ export default function SettingsPanel({ onPolled }: Props) {
 				onCleared={() => getMailAccount().then(setAccount)}
 			/>
 
+			<PollScheduleForm schedule={schedule} onSaved={setSchedule} />
+
 			<section>
-				<h2 className="font-semibold text-[var(--text-h)]">Check for updates</h2>
+				<h2 className="font-semibold text-[var(--text-h)]">Check now</h2>
 				<p className="mt-1 text-sm text-[var(--text)]">
 					Reads the gathering mailbox and records an update for every notification
 					that matches a tracker. Safe to run as often as you like — messages

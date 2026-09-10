@@ -273,6 +273,32 @@ export async function clearMailAccount(): Promise<void> {
 	await api.delete('/mail/account');
 }
 
+// The background poller's schedule. Five minutes is the server-side floor.
+export type PollSchedule = {
+	enabled: boolean,
+	interval_minutes: number,
+	last_run_at: string | null,
+	// One line about the last pass, or the error it failed with. A background
+	// poller has no request to watch fail, so this is the only feedback there is.
+	last_result: string | null,
+	next_run_at: string | null,
+};
+
+export type PollScheduleIn = {
+	enabled: boolean,
+	interval_minutes: number,
+};
+
+export async function getPollSchedule(): Promise<PollSchedule> {
+	const response = await api.get<PollSchedule>('/mail/schedule');
+	return response.data;
+}
+
+export async function setPollSchedule(data: PollScheduleIn): Promise<PollSchedule> {
+	const response = await api.put<PollSchedule>('/mail/schedule', data);
+	return response.data;
+}
+
 export async function getTrackerUpdates(id: number): Promise<Update[]> {
 	const response = await api.get<Update[]>(`/trackers/${id}/updates`);
 	return response.data;

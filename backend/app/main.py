@@ -1,9 +1,13 @@
+import asyncio
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from .database import SessionLocal
+from .mail import poll_forever
 from .routes import (
     router,
     subjects_router,
@@ -19,7 +23,35 @@ from .routes import (
 # Off in production; still available locally where it's genuinely useful.
 IS_PRODUCTION = os.getenv("ARTRACKER_ENV") == "production"
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Runs the mail poller alongside the app.
+
+    In-process rather than a host cron job because the interval is a setting on
+    the Settings page, and a value in the database can't reconfigure crontab. It
+    also keeps the whole feature inside the one container the deployment already
+    has.
+
+    The task does nothing until the schedule is switched on, so this is inert on
+    a fresh install. Tests never reach it: TestClient only runs lifespan inside a
+    `with` block, and conftest doesn't use one.
+    """
+    poller = asyncio.create_task(poll_forever(SessionLocal))
+    try:
+        yield
+    finally:
+        # Cancelled and awaited, not just abandoned: without this the task can
+        # still be mid-poll while the interpreter tears down, which surfaces as
+        # noise on every shutdown and a half-finished pass.
+        poller.cancel()
+        try:
+            await poller
+        except asyncio.CancelledError:
+            pass
+
+
 app = FastAPI(
+    lifespan=lifespan,
     docs_url=None if IS_PRODUCTION else "/docs",
     redoc_url=None if IS_PRODUCTION else "/redoc",
     openapi_url=None if IS_PRODUCTION else "/openapi.json",
