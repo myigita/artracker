@@ -429,7 +429,7 @@ def mail_platform(client):
 	).json()
 
 
-def test_a_mail_tracked_platform_needs_no_url(client, subject):
+def test_a_platform_with_a_mail_domain_seeds_a_rule_and_needs_no_url(client, subject):
 	mail_platform(client)
 
 	response = client.post(
@@ -441,15 +441,31 @@ def test_a_mail_tracked_platform_needs_no_url(client, subject):
 	assert response.json()["url"] == ""
 
 
-def test_an_ordinary_platform_still_requires_a_url(client, subject, platform):
-	# A saved link with no link does nothing, so this stays a 400.
+def test_a_tracker_with_neither_url_nor_rules_is_rejected(client, subject, platform):
+	# Pixiv has no mail domain to inherit a rule from, so this tracker would have
+	# no link to open and nothing to catch mail with — it would do nothing at all.
 	response = client.post(
 		"/api/trackers/",
 		json={"subject_name": subject["name"], "platform_name": platform["name"]},
 	)
 
 	assert response.status_code == 400
-	assert "URL is required" in response.json()["detail"]
+	assert "match rule" in response.json()["detail"]
+
+
+def test_rules_alone_are_enough_without_a_url(client, subject, platform):
+	response = client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": platform["name"],
+			"rules": [{"field": "sender", "operator": "contains", "value": "pixiv.net"}],
+		},
+	)
+
+	assert response.status_code == 201
+	assert response.json()["url"] == ""
+	assert len(response.json()["rules"]) == 1
 
 
 def test_a_blank_url_is_treated_as_absent(client, subject, platform):
@@ -461,7 +477,7 @@ def test_a_blank_url_is_treated_as_absent(client, subject, platform):
 	assert response.status_code == 400
 
 
-def test_the_url_can_be_cleared_on_a_mail_tracker(client, subject):
+def test_the_url_can_be_cleared_when_rules_remain(client, subject):
 	mail_platform(client)
 	created = client.post(
 		"/api/trackers/",
@@ -478,7 +494,8 @@ def test_the_url_can_be_cleared_on_a_mail_tracker(client, subject):
 	assert response.json()["url"] == ""
 
 
-def test_the_url_cannot_be_cleared_on_an_ordinary_tracker(client, subject, platform):
+def test_the_url_cannot_be_cleared_when_there_are_no_rules(client, subject, platform):
+	# Clearing it would leave the tracker with nothing to do.
 	created = client.post(
 		"/api/trackers/",
 		json={
@@ -492,6 +509,20 @@ def test_the_url_cannot_be_cleared_on_an_ordinary_tracker(client, subject, platf
 
 	assert response.status_code == 400
 	assert client.get(f"/api/trackers/{created['id']}").json()["url"] == "https://example.test/a"
+
+
+def test_the_rules_cannot_be_cleared_when_there_is_no_url(client, subject, platform):
+	# The mirror image, and the same reason.
+	created = client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": platform["name"],
+			"rules": [{"field": "sender", "operator": "contains", "value": "pixiv.net"}],
+		},
+	).json()
+
+	assert client.patch(f"/api/trackers/{created['id']}", json={"rules": []}).status_code == 400
 
 
 def test_the_default_name_uses_parentheses(client, subject):

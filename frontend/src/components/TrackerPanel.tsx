@@ -17,7 +17,6 @@ import AddTrackerForm from './AddTrackerForm';
 import AddNameForm from './AddNameForm';
 import NameList from './NameList';
 import SubjectCategorySelect from './SubjectCategorySelect';
-import SubjectHandles from './SubjectHandles';
 import BackupPanel from './BackupPanel';
 import SettingsPanel from './SettingsPanel';
 import TitleBar from './TitleBar';
@@ -263,29 +262,12 @@ export default function TrackerPanel() {
 						label="Subject"
 						items={subjects}
 						usageCount={subjectUsage}
-						// Category stays in the always-visible header — it's a single
-						// value and reads at a glance. Handles move into the expanded
-						// panel: a variable-length list of pills is too much to carry in
-						// a row, and it was the thing making that row overflow.
 						renderExtra={(subject) => (
-							<>
-								{/* Collapsed, the handles themselves are hidden, so the count
-								    is the only sign there are any — and "0 handles" is the
-								    signal that this subject can never match mail. */}
-								<span className="shrink-0 text-xs text-[var(--text)]">
-									{subject.handles.length === 1
-										? '1 handle'
-										: `${subject.handles.length} handles`}
-								</span>
-								<SubjectCategorySelect
-									subject={subject}
-									categories={categories}
-									onChanged={fetchSubjects}
-								/>
-							</>
-						)}
-						renderExpanded={(subject) => (
-							<SubjectHandles subject={subject} onChanged={fetchSubjects} />
+							<SubjectCategorySelect
+								subject={subject}
+								categories={categories}
+								onChanged={fetchSubjects}
+							/>
 						)}
 						onDelete={deleteSubject}
 						onDeleted={fetchSubjects}

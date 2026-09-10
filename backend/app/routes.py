@@ -11,13 +11,12 @@ from .mail import (
 from .models import (
 	Category,
 	MailAccount,
+	MatchRule,
 	Subject,
-	SubjectHandle,
 	Tracker,
 	Platform,
 	UnmatchedMail,
 	Update,
-	normalize_handle,
 	utcnow,
 )
 from .schemas import (
@@ -41,6 +40,7 @@ from .schemas import (
 	ImportResult,
 	MailAccountIn,
 	MailAccountOut,
+	MatchRuleIn,
 	PollResult,
 	UnmatchedMailOut,
 	UpdateOut,
@@ -60,7 +60,14 @@ def get_trackers(db: Session = Depends(get_db)):
 	# every row, so without it a list of N trackers costs N extra queries.
 	trackers = (
 		db.query(Tracker)
-		.options(selectinload(Tracker.updates))
+		.options(selectinload(Tracker.updates), selectinload(Tracker.rules))
+		# populate_existing because this endpoint's whole job is to report current
+		# state. Without it a Tracker already in the session's identity map keeps
+		# whatever collections it loaded earlier, so unread_count can be computed
+		# from a stale `updates` list — a poll adds rows and the badge stays at
+		# zero. Invisible in production, where every request gets a new session,
+		# and very visible in tests, which share one.
+		.populate_existing()
 		.order_by(Tracker.date_created.desc())
 		.all()
 	)
@@ -83,14 +90,17 @@ def create_tracker(tracker_in: TrackerIn, db: Session = Depends(get_db)):
 	if not platform:
 		raise HTTPException(status_code=400, detail="Invalid platform")
 
-	# A mail-tracked platform has somewhere for updates to come from, so a tracker
-	# on one is useful with no link at all. Everything else is a saved link, and a
-	# saved link with no link does nothing.
 	url = (tracker_in.url or "").strip()
-	if not url and not platform.mail_domain:
-		raise HTTPException(
-			status_code=400,
-			detail=f"A URL is required for '{platform.name}'",
+
+	rules_in = tracker_in.rules
+	if rules_in is None:
+		# Omitted, so fall back to whatever the platform knows. A mail platform
+		# then yields a working starting rule instead of a tracker that catches
+		# nothing, and it saves looking the domain up by hand.
+		rules_in = (
+			[MatchRuleIn(field="sender", operator="contains", value=platform.mail_domain)]
+			if platform.mail_domain
+			else []
 		)
 
 	name = tracker_in.name if tracker_in.name else f"{tracker_in.subject_name} ({tracker_in.platform_name})"
@@ -107,6 +117,9 @@ def create_tracker(tracker_in: TrackerIn, db: Session = Depends(get_db)):
 		url=url,
 		description=tracker_in.description
 	)
+	_set_rules(tracker, rules_in)
+	_require_url_or_rules(url, tracker.rules, name)
+
 	db.add(tracker)
 	db.commit()
 	return tracker
@@ -129,15 +142,30 @@ def update_tracker(tracker_id: int, tracker_update: TrackerUpdate, db: Session =
 	# on a tracker that had never been checked before.
 	if "name" in changes and not changes["name"]:
 		raise HTTPException(status_code=400, detail="Name cannot be empty")
-	# Clearing the URL is allowed only where one was never needed — same rule as
-	# create. A null would hit the NOT NULL column, so it lands as "" either way.
+	# A null would hit the NOT NULL column, so a cleared URL lands as "".
 	if "url" in changes and not changes["url"]:
-		if not tracker.platform.mail_domain:
-			raise HTTPException(
-				status_code=400,
-				detail=f"A URL is required for '{tracker.platform.name}'",
-			)
 		changes["url"] = ""
+
+	# Rules come out before the generic setattr loop below: model_dump has already
+	# turned them into plain dicts, and assigning those to the relationship would
+	# fail. The parsed models are still on tracker_update.
+	rules_sent = "rules" in changes
+	changes.pop("rules", None)
+
+	# Validated against what the tracker WOULD become, and before anything is
+	# applied. Clearing the URL is fine if rules remain and clearing the rules is
+	# fine if a URL remains, but not both — and a rejection has to leave the object
+	# untouched rather than trusting that the session is discarded unread.
+	prospective_url = (changes["url"] if "url" in changes else tracker.url) or ""
+	prospective_rules = (
+		[rule for rule in (tracker_update.rules or []) if rule.value.strip()]
+		if rules_sent
+		else tracker.rules
+	)
+	_require_url_or_rules(prospective_url.strip(), prospective_rules, tracker.name)
+
+	if rules_sent:
+		_set_rules(tracker, tracker_update.rules or [])
 
 	for field, value in changes.items():
 		setattr(tracker, field, value)
@@ -170,7 +198,19 @@ def check_tracker(tracker_id: int, db: Session = Depends(get_db)):
 
 @router.delete("/{tracker_id}", response_model=TrackerOut)
 def delete_tracker(tracker_id: int, db: Session = Depends(get_db)):
-	tracker = db.query(Tracker).filter(Tracker.id == tracker_id).first()
+	# The children are loaded, and refreshed, on purpose: delete-orphan cascades
+	# over the collections as SQLAlchemy currently holds them. If the session
+	# already cached an empty `updates` — which happens whenever rows were added
+	# by tracker_id rather than by appending — the cascade finds nothing and
+	# leaves orphans behind, still holding their unique external_ref and blocking
+	# the same mail from ever being recorded again.
+	tracker = (
+		db.query(Tracker)
+		.options(selectinload(Tracker.updates), selectinload(Tracker.rules))
+		.populate_existing()
+		.filter(Tracker.id == tracker_id)
+		.first()
+	)
 	if not tracker:
 		raise HTTPException(status_code=404, detail="Tracker not found")
 
@@ -186,52 +226,47 @@ def _lookup_category(name: str, db: Session) -> Category:
 		raise HTTPException(status_code=400, detail="Invalid category")
 	return category
 
-# Replaces a subject's handles wholesale. Normalises, drops duplicates within the
-# request, and checks the cross-subject unique constraint by hand — left to the
-# database it surfaces as an IntegrityError at commit, which is a 500.
-def _set_handles(subject: Subject, handles: list[str], db: Session) -> None:
-	normalized: list[str] = []
-	for raw in handles:
-		value = normalize_handle(raw)
-		if value and value not in normalized:
-			normalized.append(value)
+# Replaces a tracker's rules wholesale, the way the PATCH body describes them.
+# Mutated in place rather than reassigned: assigning a fresh list makes SQLAlchemy
+# delete every row and insert every row with no guaranteed ordering, which bit the
+# handles version when a value was re-sent unchanged.
+def _set_rules(tracker: Tracker, rules: list[MatchRuleIn]) -> None:
+	# De-duplicated as it's built, not just filtered. Two identical rules in one
+	# request are a slip rather than a conflict, and appending both would store the
+	# same condition twice — the second can never change any outcome.
+	wanted: list[tuple[str, str, str]] = []
+	for rule in rules:
+		value = rule.value.strip()
+		if not value:
+			continue
+		key = (rule.field.value, rule.operator.value, value)
+		if key not in wanted:
+			wanted.append(key)
 
-	if normalized:
-		clashes = db.query(SubjectHandle).filter(SubjectHandle.handle.in_(normalized))
-		# A subject being created has no id yet, and `subject_id != NULL` is never
-		# true in SQL — applying that filter unconditionally would silently match
-		# nothing and let a duplicate straight through.
-		if subject.id is not None:
-			clashes = clashes.filter(SubjectHandle.subject_id != subject.id)
-		if clash := clashes.first():
-			raise HTTPException(
-				status_code=409,
-				detail=f"Handle '{clash.handle}' already belongs to another subject",
-			)
+	existing = {(r.field, r.operator, r.value): r for r in tracker.rules}
 
-	# Mutated in place rather than reassigned, and that matters. Assigning a fresh
-	# list makes SQLAlchemy delete every existing row and insert every new one,
-	# with no guarantee the DELETE is flushed before the INSERT — so re-sending a
-	# handle the subject already owns collides with ITSELF on the unique index and
-	# fails as a 500. Touching only the difference leaves unchanged rows alone.
-	existing = {row.handle: row for row in subject.handles}
+	for key, row in existing.items():
+		if key not in wanted:
+			tracker.rules.remove(row)
 
-	for value, row in existing.items():
-		if value not in normalized:
-			subject.handles.remove(row)  # delete-orphan turns this into a DELETE
+	for field, operator, value in wanted:
+		if (field, operator, value) not in existing:
+			tracker.rules.append(MatchRule(field=field, operator=operator, value=value))
 
-	for value in normalized:
-		if value not in existing:
-			subject.handles.append(SubjectHandle(handle=value))
+
+# A tracker that has neither a link to open nor a rule to catch mail does nothing
+# at all, so one of the two is required. Which one is up to the user.
+def _require_url_or_rules(url: str, rules: list, name: str) -> None:
+	if not url and not rules:
+		raise HTTPException(
+			status_code=400,
+			detail=f"'{name}' needs a URL or at least one match rule",
+		)
+
 
 @subjects_router.get("/", response_model=list[SubjectOut])
 def get_subjects(db: Session = Depends(get_db)):
-	return (
-		db.query(Subject)
-		.options(selectinload(Subject.handles))
-		.order_by(Subject.name)
-		.all()
-	)
+	return db.query(Subject).order_by(Subject.name).all()
 
 @subjects_router.post("/", response_model=SubjectOut, status_code=201)
 def create_subject(subject_in: SubjectIn, db: Session = Depends(get_db)):
@@ -244,7 +279,6 @@ def create_subject(subject_in: SubjectIn, db: Session = Depends(get_db)):
 		category = _lookup_category(subject_in.category_name, db)
 
 	subject = Subject(name=subject_in.name, category=category)
-	_set_handles(subject, subject_in.handles, db)
 	db.add(subject)
 	db.commit()
 	return subject
@@ -263,12 +297,6 @@ def update_subject(subject_id: int, subject_update: SubjectUpdate, db: Session =
 	if "category_name" in changes:
 		name = changes["category_name"]
 		subject.category = _lookup_category(name, db) if name else None
-
-	# Same shape as category: present-and-null (or empty) clears, omitted leaves
-	# alone. Null and [] mean the same thing here — there is no third state a
-	# list of handles could be in.
-	if "handles" in changes:
-		_set_handles(subject, changes["handles"] or [], db)
 
 	db.commit()
 	return subject
@@ -401,13 +429,12 @@ def import_backup(
 	deleted = 0
 	if mode is ImportMode.replace:
 		# `query(...).delete()` is a BULK delete: it emits one DELETE statement and
-		# runs no ORM cascades at all. The delete-orphan rules on Subject.handles
-		# and Tracker.updates do NOT fire here, so every child table has to be
-		# listed by hand. Miss one and its rows survive pointing at ids that no
-		# longer exist — and because handles and updates both carry unique
-		# columns, those orphans then block the very rows the import is trying to
-		# restore.
-		for model in (Update, UnmatchedMail, SubjectHandle):
+		# runs no ORM cascades at all. The delete-orphan rules on Tracker.updates
+		# and Tracker.rules do NOT fire here, so every child table has to be listed
+		# by hand. Miss one and its rows survive pointing at ids that no longer
+		# exist — and because updates carry a unique column, those orphans then
+		# block the very rows the import is trying to restore.
+		for model in (Update, UnmatchedMail, MatchRule):
 			db.query(model).delete()
 
 		# Children first — SQLite isn't enforcing the foreign keys, but deleting
@@ -432,7 +459,6 @@ def import_backup(
 	# rows added moments ago under autoflush=False. In replace mode both start
 	# empty, since the bulk deletes above already hit the database.
 	used_domains = {p.mail_domain for p in platforms.values() if p.mail_domain}
-	used_handles = {h.handle for h in db.query(SubjectHandle).all()}
 	# Trackers have no unique constraint, so "already present" has to be defined
 	# here. The key is the whole (subject, platform, url) triple rather than the
 	# url alone: two subjects can legitimately point at the same page, and
@@ -503,25 +529,9 @@ def import_backup(
 					status_code=400,
 					detail=f"Subject '{item.name}' references unknown category '{item.category_name}'",
 				)
-		# A subject already present is skipped whole, handles included — merge
-		# leaves what's there alone rather than half-updating it.
-		handles: list[str] = []
-		for raw in item.handles:
-			value = normalize_handle(raw)
-			if not value or value in handles:
-				continue
-			if value in used_handles:
-				raise HTTPException(
-					status_code=400,
-					detail=f"Subject '{item.name}' reuses handle '{value}'",
-				)
-			handles.append(value)
-		used_handles.update(handles)
-
 		subjects[item.name] = Subject(
 			name=item.name,
 			category=category,
-			handles=[SubjectHandle(handle=value) for value in handles],
 			date_created=item.date_created or utcnow(),
 		)
 		db.add(subjects[item.name])
@@ -543,7 +553,7 @@ def import_backup(
 				status_code=400,
 				detail=f"Tracker '{item.name}' references unknown platform '{item.platform_name}'",
 			)
-		db.add(Tracker(
+		restored = Tracker(
 			name=item.name,
 			subject=subject,
 			platform=platform,
@@ -551,7 +561,11 @@ def import_backup(
 			description=item.description,
 			date_created=item.date_created or utcnow(),
 			last_checked=item.last_checked,
-		))
+		)
+		# Rules are configuration, so they ride along with the tracker. Set through
+		# the same helper the routes use, which normalises and de-duplicates.
+		_set_rules(restored, item.rules)
+		db.add(restored)
 		added["trackers"] += 1
 
 	db.commit()

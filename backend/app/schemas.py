@@ -1,4 +1,4 @@
-from pydantic import AfterValidator, AliasChoices, BaseModel, Field, PlainSerializer
+from pydantic import AfterValidator, BaseModel, Field, PlainSerializer
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated
@@ -60,20 +60,41 @@ Description = Annotated[str, Field(max_length=1000)]
 # reason.
 BlankableUrl = Annotated[str, Field(max_length=2000)]
 
-# Serialized as "handles", but read from either name — and the ORDER is
-# load-bearing.
-#
-# On an ORM object both attributes exist: `handles` is the relationship and holds
-# SubjectHandle objects, while `handle_names` is the property that flattens them
-# to strings. Trying "handles" first would find the relationship and fail
-# validation against list[str]. Trying "handle_names" first gets the strings from
-# a model, and falls through to "handles" for a JSON document — which is what
-# lets one model serve export and import both.
-_HANDLES = Field(
-    default=[],
-    validation_alias=AliasChoices("handle_names", "handles"),
-    max_length=100,
-)
+class MatchField(str, Enum):
+    sender = "sender"
+    # The message body is deliberately absent. Headers are already in hand after a
+    # fetch; bodies mean parsing multipart HTML and are where false positives live.
+    # The model takes another value without a schema change when it's wanted.
+    subject = "subject"
+
+
+class MatchOperator(str, Enum):
+    contains = "contains"
+    # The negative forms are what make a broad sender rule usable — "from Patreon
+    # but not the weekly digest".
+    not_contains = "not_contains"
+    equals = "equals"
+    not_equals = "not_equals"
+
+
+class MatchRuleIn(BaseModel):
+    # from_attributes so the backup export can build these straight off the ORM
+    # rows, which is what lets one model serve both directions the way the other
+    # backup models do.
+    model_config = {**_STRICT, "from_attributes": True}
+
+    field: MatchField
+    operator: MatchOperator
+    value: Annotated[str, Field(min_length=1, max_length=500)]
+
+
+class MatchRuleOut(BaseModel):
+    id: int
+    field: str
+    operator: str
+    value: str
+
+    model_config = {"from_attributes": True}
 
 
 class CategoryIn(BaseModel):
@@ -93,24 +114,18 @@ class SubjectIn(BaseModel):
 
     name: Name
     category_name: Name | None = None
-    handles: list[Name] = _HANDLES
 
 class SubjectUpdate(BaseModel):
     model_config = _STRICT
 
-    # Still narrow — renaming would need 409 handling for the unique constraint
-    # and is deliberately left out. Handles earn their place because mail
-    # matching is useless without them and they change independently of the name.
+    # Deliberately narrow: assigning a category is all this exists for. Renaming
+    # would need 409 handling for the unique constraint — add it when wanted.
     category_name: Name | None = None
-    # An omitted key leaves handles alone; [] clears them. exclude_unset in the
-    # route is what keeps those two apart.
-    handles: list[Name] | None = Field(default=None, max_length=100)
 
 class SubjectOut(BaseModel):
     id: int
     name: str
     category_name: str | None
-    handles: list[str] = _HANDLES
     date_created: UtcDatetime
 
     model_config = {"from_attributes": True}
@@ -119,8 +134,8 @@ class PlatformIn(BaseModel):
     model_config = _STRICT
 
     name: Name
-    # Set this and the platform becomes mail-trackable: incoming messages from
-    # this sender domain resolve to its trackers. Null is a plain saved link.
+    # A convenience, not a matching rule: a tracker created on this platform gets
+    # a starting "sender contains <domain>" rule so you don't have to look it up.
     mail_domain: Name | None = None
 
 class PlatformOut(BaseModel):
@@ -140,20 +155,26 @@ class TrackerIn(BaseModel):
     name: Name | None = None
     subject_name: Name
     platform_name: Name
-    # Optional here, but the route still requires one for platforms that aren't
-    # mail-tracked — a saved link with no link does nothing. Only a platform with
-    # a mail_domain has a reason to exist without one.
+    # A tracker needs a URL or at least one match rule — the route enforces that.
+    # URL only is a manual bookmark; rules only is a mail-watched artist with no
+    # page; both is the useful case, so neither is required on its own.
     url: BlankableUrl | None = None
     description: Description | None = None
+    # Omitted falls back to the platform's mail_domain, if it has one.
+    rules: list[MatchRuleIn] | None = Field(default=None, max_length=25)
 
 class TrackerUpdate(BaseModel):
     model_config = _STRICT
 
     name: Name | None = None
-    # Blank is meaningful: it clears the URL, which the route allows only on a
-    # mail-tracked platform.
+    # Blank is meaningful: it clears the URL, which the route allows only when
+    # the tracker still has rules to work from.
     url: BlankableUrl | None = None
     description: Description | None = None
+    # Replaced wholesale, like handles were. An omitted key leaves the rules
+    # alone; [] clears them, which the route refuses when there is no URL to fall
+    # back on — that would leave a tracker that does nothing at all.
+    rules: list[MatchRuleIn] | None = Field(default=None, max_length=25)
     # Writable so the UI can undo an accidental check. null is a real value
     # here — it restores a tracker that had never been checked before.
     last_checked: NaiveUtcDatetime | None = None
@@ -166,6 +187,7 @@ class TrackerOut(BaseModel):
     platform_name: str
     url: str
     description: str | None
+    rules: list[MatchRuleOut] = []
     date_created: UtcDatetime
     last_checked: UtcDatetime | None
     # Updates detected since last_checked. Computed on the model rather than
@@ -271,10 +293,6 @@ class SubjectBackup(BaseModel):
 
     name: Name
     category_name: Name | None = None
-    # Configuration, not derived data, so it has to survive a backup — without
-    # this every export silently drops the handles and a restore leaves mail
-    # matching resolving nothing.
-    handles: list[Name] = _HANDLES
     date_created: BackupDatetime | None = None
 
 
@@ -284,8 +302,12 @@ class TrackerBackup(BaseModel):
     name: Name
     subject_name: Name
     platform_name: Name
-    url: Url
+    url: BlankableUrl = ""
     description: Description | None = None
+    # Configuration, not derived data, so it has to survive a backup — without
+    # this an export silently drops every rule and a restore leaves mail matching
+    # nothing at all.
+    rules: list[MatchRuleIn] = []
     date_created: BackupDatetime | None = None
     last_checked: BackupDatetime | None = None
 

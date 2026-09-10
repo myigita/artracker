@@ -44,12 +44,16 @@ def message(sender, subject="August Character Poll", message_id=None, received_a
 
 
 def patreon(client):
-	"""Platform, subject-with-handle and tracker — a complete resolution chain."""
+	"""A complete chain: platform with a known mail domain, subject, tracker.
+
+	The tracker sends no rules, so it inherits the platform's domain as a starting
+	"sender contains creator.patreon.com" rule.
+	"""
 	client.post(
 		"/api/platforms/",
 		json={"name": "Patreon - Mail", "mail_domain": "creator.patreon.com"},
 	)
-	client.post("/api/subjects/", json={"name": "Pear哥", "handles": ["peargor"]})
+	client.post("/api/subjects/", json={"name": "Pear哥"})
 	return client.post(
 		"/api/trackers/",
 		json={
@@ -75,7 +79,7 @@ def test_parses_a_real_patreon_header():
 
 	parsed = parse_message(raw)
 
-	# The display name is ignored entirely; the local part is the identifier.
+	# The display name is dropped; rules match against the bare address.
 	assert parsed.sender == "peargor@creator.patreon.com"
 	assert parsed.subject == "August Character Poll"
 	assert parsed.message_id == "<abc123@creator.patreon.com>"
@@ -159,39 +163,113 @@ def test_the_same_message_twice_in_one_batch_collides_with_itself(client, mailbo
 	assert body["duplicates"] == 1
 
 
-def test_unknown_sender_domain_is_recorded_as_unmatched(client, mailbox):
+def test_mail_no_rule_claims_is_recorded_as_unmatched(client, mailbox):
 	patreon(client)
 	mailbox.append(message("someone@unknown.test"))
 
 	assert client.post("/api/mail/poll").json()["unmatched"] == 1
 
 	rejects = client.get("/api/mail/unmatched").json()
-	assert "unknown.test" in rejects[0]["reason"]
+	assert "match rules" in rejects[0]["reason"]
+	assert rejects[0]["sender"] == "someone@unknown.test"
 
 
-def test_unknown_handle_is_recorded_as_unmatched(client, mailbox):
-	patreon(client)
-	mailbox.append(message("nobody@creator.patreon.com"))
-
-	client.post("/api/mail/poll")
-
-	rejects = client.get("/api/mail/unmatched").json()
-	assert "nobody" in rejects[0]["reason"]
-
-
-def test_subject_without_a_tracker_on_that_platform_is_unmatched(client, mailbox):
-	# Handle resolves, platform resolves, but nothing joins them.
+def test_a_tracker_with_no_rules_never_matches(client, mailbox, subject, platform):
+	# all([]) is True, so without an explicit guard every rule-less tracker would
+	# claim every message the moment mail started arriving.
 	client.post(
-		"/api/platforms/",
-		json={"name": "Patreon - Mail", "mail_domain": "creator.patreon.com"},
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": platform["name"],
+			"url": "https://example.test/a",
+		},
 	)
-	client.post("/api/subjects/", json={"name": "Pear哥", "handles": ["peargor"]})
-	mailbox.append(message("peargor@creator.patreon.com"))
+	mailbox.append(message("anyone@anywhere.test"))
 
-	client.post("/api/mail/poll")
+	assert client.post("/api/mail/poll").json()["recorded"] == 0
 
-	rejects = client.get("/api/mail/unmatched").json()
-	assert "no 'Patreon - Mail' tracker" in rejects[0]["reason"]
+
+def test_all_of_a_trackers_rules_must_hold(client, mailbox, subject):
+	# The AND is what makes not_contains useful: catch this sender, except digests.
+	client.post("/api/platforms/", json={"name": "Patreon - Mail"})
+	tracker = client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": "Patreon - Mail",
+			"rules": [
+				{"field": "sender", "operator": "contains", "value": "creator.patreon.com"},
+				{"field": "subject", "operator": "not_contains", "value": "weekly digest"},
+			],
+		},
+	).json()
+
+	mailbox.append(message("x@creator.patreon.com", subject="New post"))
+	mailbox.append(message("x@creator.patreon.com", subject="Your weekly digest"))
+
+	body = client.post("/api/mail/poll").json()
+
+	assert body["recorded"] == 1
+	assert body["unmatched"] == 1
+	summaries = [u["summary"] for u in client.get(f"/api/trackers/{tracker['id']}/updates").json()]
+	assert summaries == ["New post"]
+
+
+def test_a_subject_line_rule_matches_a_generic_sender(client, mailbox, subject):
+	# The case the old handle model could not express at all: one shared sender
+	# address, with the artist named in the subject line.
+	client.post("/api/platforms/", json={"name": "Pixiv - Mail"})
+	client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": "Pixiv - Mail",
+			"rules": [{"field": "subject", "operator": "contains", "value": "peargor"}],
+		},
+	)
+
+	mailbox.append(message("no-reply@pixiv.net", subject="peargor posted a new work"))
+
+	assert client.post("/api/mail/poll").json()["recorded"] == 1
+
+
+def test_one_message_can_land_on_several_trackers(client, mailbox, subject):
+	# Two artists genuinely can appear in one notification; that's information
+	# rather than an error, so it records on both.
+	client.post("/api/platforms/", json={"name": "Pixiv - Mail"})
+	client.post("/api/subjects/", json={"name": "Other"})
+	for name, needle in [(subject["name"], "peargor"), ("Other", "nyantcha")]:
+		client.post(
+			"/api/trackers/",
+			json={
+				"subject_name": name,
+				"platform_name": "Pixiv - Mail",
+				"rules": [{"field": "subject", "operator": "contains", "value": needle}],
+			},
+		)
+
+	mailbox.append(message("no-reply@pixiv.net", subject="peargor and nyantcha posted"))
+
+	assert client.post("/api/mail/poll").json()["recorded"] == 1
+	counts = [t["unread_count"] for t in client.get("/api/trackers/").json()]
+	assert sorted(counts) == [1, 1]
+
+
+def test_rule_matching_ignores_case(client, mailbox, subject):
+	client.post("/api/platforms/", json={"name": "Pixiv - Mail"})
+	client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": "Pixiv - Mail",
+			"rules": [{"field": "subject", "operator": "contains", "value": "PearGor"}],
+		},
+	)
+
+	mailbox.append(message("no-reply@pixiv.net", subject="peargor posted"))
+
+	assert client.post("/api/mail/poll").json()["recorded"] == 1
 
 
 def test_unmatched_mail_can_be_dismissed(client, mailbox):

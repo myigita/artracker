@@ -5,19 +5,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 def utcnow() -> datetime:
 	return datetime.now(timezone.utc).replace(tzinfo=None)
 
-# Handles are matched against the local part of an email sender, and email local
-# parts are not case-sensitive in practice — "PearGor" and "peargor" are the same
-# creator. Normalising on write AND on lookup is what stops them becoming two
-# rows that can never both match.
-def normalize_handle(handle: str) -> str:
-	return handle.strip().lower()
-
-# Platforms the app ships knowing how to read mail for. Lives here rather than in
-# database.py so the Platform model can consult it without importing the module
-# that imports it — database.py already depends on this one.
+# Platforms the app ships knowing about. Lives here rather than in database.py so
+# the Platform model can consult it without importing the module that imports it
+# — database.py already depends on this one.
 #
 # The sender domain is a fact about the platform, not a preference; nobody should
-# have to look up "creator.patreon.com" by hand.
+# have to look up "creator.patreon.com" by hand. It no longer drives matching —
+# it seeds a starting match rule when a tracker is created on the platform.
 PREDEFINED_PLATFORMS: list[tuple[str, str]] = [
 	("Patreon - Mail", "creator.patreon.com"),
 ]
@@ -49,44 +43,9 @@ class Subject(Base):
 	category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
 	category: Mapped["Category | None"] = relationship(back_populates="subjects")
 
-	# delete-orphan because handles are OWNED by their subject — deleting the
-	# subject should take them with it. That's the opposite of trackers, which are
-	# peers and block the delete with a 409 instead. SQLite has foreign keys
-	# disabled, so this cascade is enforced by SQLAlchemy in Python and by nothing
-	# else; without it, deleting a subject strands its handle rows and they keep
-	# matching incoming mail against a subject that no longer exists.
-	handles: Mapped[list["SubjectHandle"]] = relationship(
-		back_populates="subject", cascade="all, delete-orphan"
-	)
-
 	@property
 	def category_name(self) -> str | None:
 		return self.category.name if self.category else None
-
-	@property
-	def handle_names(self) -> list[str]:
-		return sorted(h.handle for h in self.handles)
-
-class SubjectHandle(Base):
-	"""What a subject is called on some platform — e.g. `peargor` on Patreon.
-
-	Kept out of `Subject.name` so the name can stay human-readable while the
-	handles stay machine-matchable, and because one artist has a different handle
-	on every platform they post to.
-	"""
-	__tablename__ = "subject_handles"
-
-	id: Mapped[int] = mapped_column(primary_key=True)
-
-	subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id"), nullable=False)
-	subject: Mapped["Subject"] = relationship(back_populates="handles")
-
-	# Unique across ALL subjects, not merely within one. A handle has to resolve
-	# to exactly one subject or mail matching needs a tie-breaking rule, and there
-	# is no good one. If two artists ever genuinely share a handle on different
-	# platforms, that is the point to add platform_id here — not before.
-	handle: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-	date_created: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 class Platform(Base):
 	__tablename__ = "platforms"
@@ -97,12 +56,9 @@ class Platform(Base):
 	trackers: Mapped[list["Tracker"]] = relationship(back_populates="platform")
 
 	# The sender domain of this platform's notification email, e.g.
-	# "creator.patreon.com". Null means the platform is a plain saved link with no
-	# automatic updates, which is every platform that existed before this feature.
-	#
-	# Unique so two platforms can't claim the same domain and make a match
-	# ambiguous. SQLite permits any number of NULLs in a unique column, so all the
-	# link-only platforms coexist happily.
+	# "creator.patreon.com". No longer used for matching — it is a convenience that
+	# seeds a first match rule when a tracker is created here, so you don't have to
+	# look the domain up. Null means the platform has no known notification mail.
 	mail_domain: Mapped[str | None] = mapped_column(String(255), unique=True)
 
 	# Seeded platforms are refused deletion. Deleting one used to "work" and then
@@ -130,9 +86,12 @@ class Tracker(Base):
 	last_checked: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 	date_created: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-	# Owned children, same reasoning as Subject.handles: an update is meaningless
-	# without the tracker it belongs to.
+	# Owned children: an update is meaningless without the tracker it belongs to,
+	# and a rule without one has nothing to match against.
 	updates: Mapped[list["Update"]] = relationship(
+		back_populates="tracker", cascade="all, delete-orphan"
+	)
+	rules: Mapped[list["MatchRule"]] = relationship(
 		back_populates="tracker", cascade="all, delete-orphan"
 	)
 
@@ -159,6 +118,37 @@ class Tracker(Base):
 			return len(self.updates)
 		return sum(1 for update in self.updates if update.detected_at > self.last_checked)
 
+class MatchRule(Base):
+	"""One condition an incoming message must satisfy to land on this tracker.
+
+	Replaces the earlier scheme of subject handles plus a per-platform sender
+	domain. That could only find the artist in the sender's local part —
+	`peargor@creator.patreon.com` — which is how Patreon happens to work and how
+	most platforms don't. They mail from one generic address and put the artist in
+	the subject line, which the old model had no way to express at all.
+
+	A rule belongs to a tracker rather than a subject because it is inherently
+	about one artist on one platform, and that pair IS a tracker. It also drops
+	the constraint handles needed: they had to be globally unique so a handle
+	resolved to exactly one subject, since there was no sensible tie-breaker.
+	"""
+	__tablename__ = "match_rules"
+
+	id: Mapped[int] = mapped_column(primary_key=True)
+
+	tracker_id: Mapped[int] = mapped_column(ForeignKey("trackers.id"), nullable=False)
+	tracker: Mapped["Tracker"] = relationship(back_populates="rules")
+
+	# "sender" or "subject". Validated by the schema rather than a DB enum, which
+	# is how the other string columns here work. The message body is deliberately
+	# not an option yet: headers are already in hand after a fetch, whereas bodies
+	# mean parsing multipart HTML and are where false positives live.
+	field: Mapped[str] = mapped_column(String(32), nullable=False)
+	# contains / not_contains / equals / not_equals.
+	operator: Mapped[str] = mapped_column(String(32), nullable=False)
+	value: Mapped[str] = mapped_column(String(500), nullable=False)
+	date_created: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
 class Update(Base):
 	"""One detected "they posted something" event, from any source.
 
@@ -173,9 +163,12 @@ class Update(Base):
 	tracker_id: Mapped[int] = mapped_column(ForeignKey("trackers.id"), nullable=False)
 	tracker: Mapped["Tracker"] = relationship(back_populates="updates")
 
-	# The source's own identifier for this event — a Message-ID for mail, a post
-	# id for an API source later. Unique, and that uniqueness is the entire
-	# mechanism that makes re-polling the same mailbox idempotent.
+	# The source's identifier for this event, SCOPED TO THE TRACKER — the poller
+	# stores "<tracker id>:<Message-ID>". One message can satisfy several trackers'
+	# rules now, and each needs its own row, so a bare Message-ID would collide
+	# with itself on this unique index. Prefixing keeps re-polling idempotent per
+	# tracker without rebuilding the table to relax the constraint, which SQLite
+	# cannot do in place.
 	external_ref: Mapped[str] = mapped_column(String(998), nullable=False, unique=True)
 	summary: Mapped[str] = mapped_column(String(1000), nullable=True)
 	detected_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

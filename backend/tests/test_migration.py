@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-from app.database import ensure_schema, seed_platforms
+from app.database import ensure_schema, migrate_handles_to_rules, seed_platforms
 from app.models import Base
 
 
@@ -290,3 +290,116 @@ def test_seeding_leaves_an_already_claimed_domain_alone(tmp_path):
 			text("SELECT id, mail_domain FROM platforms ORDER BY id")
 		).fetchall()
 	assert rows == [(1, None), (2, "creator.patreon.com")]
+
+
+# subject_handles as it was before match rules replaced it.
+OLD_HANDLES = """
+CREATE TABLE subject_handles (
+	id INTEGER NOT NULL,
+	subject_id INTEGER NOT NULL,
+	handle VARCHAR(255) NOT NULL,
+	date_created DATETIME NOT NULL,
+	PRIMARY KEY (id),
+	UNIQUE (handle)
+)
+"""
+
+
+def database_with_handles(tmp_path):
+	"""A database at the handles-era schema, with a subject, tracker and handle."""
+	engine = create_engine(f"sqlite:///{tmp_path}/handles.db")
+	Base.metadata.create_all(bind=engine)
+	with engine.begin() as connection:
+		connection.execute(text(OLD_HANDLES))
+		connection.execute(text(
+			"INSERT INTO subjects (id, name, date_created) VALUES (1, 'Pear', '2026-01-01 00:00:00')"
+		))
+		connection.execute(text(
+			"INSERT INTO platforms (id, name, date_created) VALUES (1, 'Patreon - Mail', '2026-01-01 00:00:00')"
+		))
+		connection.execute(text(
+			"INSERT INTO trackers (id, name, subject_id, platform_id, url, date_created)"
+			" VALUES (1, 'Pear (Patreon - Mail)', 1, 1, '', '2026-01-01 00:00:00')"
+		))
+		connection.execute(text(
+			"INSERT INTO subject_handles (id, subject_id, handle, date_created)"
+			" VALUES (1, 1, 'peargor', '2026-01-01 00:00:00')"
+		))
+	return engine
+
+
+def test_handles_become_match_rules(tmp_path):
+	"""The old configuration still means something, so it's carried across rather
+	than dropped — a silently empty rule set looks like the artist went quiet."""
+	engine = database_with_handles(tmp_path)
+
+	migrate_handles_to_rules(engine)
+
+	with engine.begin() as connection:
+		rules = connection.execute(
+			text("SELECT tracker_id, field, operator, value FROM match_rules")
+		).fetchall()
+	assert rules == [(1, "sender", "contains", "peargor")]
+
+
+def test_the_handles_table_is_dropped(tmp_path):
+	engine = database_with_handles(tmp_path)
+
+	migrate_handles_to_rules(engine)
+
+	assert "subject_handles" not in inspect(engine).get_table_names()
+
+
+def test_the_handle_migration_is_idempotent(tmp_path):
+	"""It runs on every boot; the second pass must find nothing to do."""
+	engine = database_with_handles(tmp_path)
+
+	migrate_handles_to_rules(engine)
+	migrate_handles_to_rules(engine)
+
+	with engine.begin() as connection:
+		count = connection.execute(text("SELECT count(*) FROM match_rules")).scalar()
+	assert count == 1
+
+
+def test_a_handle_with_no_tracker_converts_to_nothing(tmp_path):
+	"""Rules hang off trackers, so a subject with handles but no tracker has
+	nowhere to put them. Dropping them is correct — there was nothing to match."""
+	engine = database_with_handles(tmp_path)
+	with engine.begin() as connection:
+		connection.execute(text("DELETE FROM trackers"))
+
+	migrate_handles_to_rules(engine)
+
+	with engine.begin() as connection:
+		count = connection.execute(text("SELECT count(*) FROM match_rules")).scalar()
+	assert count == 0
+
+
+def test_the_handle_migration_is_a_noop_without_the_table(tmp_path):
+	engine = create_engine(f"sqlite:///{tmp_path}/no-handles.db")
+	Base.metadata.create_all(bind=engine)
+
+	migrate_handles_to_rules(engine)  # must not raise
+
+
+def test_several_handles_become_only_one_rule(tmp_path):
+	"""Handles were alternatives; a tracker's rules are ANDed.
+
+	Converting three handles into three rules would demand a sender containing all
+	three at once — matching nothing, which is precisely the silent failure this
+	migration exists to prevent. Found against the real database, where a subject
+	with two handles produced a tracker that could never match again.
+	"""
+	engine = database_with_handles(tmp_path)
+	with engine.begin() as connection:
+		connection.execute(text(
+			"INSERT INTO subject_handles (id, subject_id, handle, date_created)"
+			" VALUES (2, 1, 'test213', '2026-01-01 00:00:00')"
+		))
+
+	migrate_handles_to_rules(engine)
+
+	with engine.begin() as connection:
+		rules = connection.execute(text("SELECT value FROM match_rules")).fetchall()
+	assert rules == [("peargor",)]

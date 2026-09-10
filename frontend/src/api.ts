@@ -2,6 +2,30 @@ import axios from 'axios';
 
 const api = axios.create({ baseURL: '/api' });
 
+// Which part of a message a rule looks at. The body is deliberately not an
+// option: headers are already in hand after a fetch, bodies mean parsing
+// multipart HTML, and that's where false positives live.
+export type MatchField = 'sender' | 'subject';
+
+// The negative forms are what make a broad sender rule usable — "from Patreon,
+// but not the weekly digest".
+export type MatchOperator = 'contains' | 'not_contains' | 'equals' | 'not_equals';
+
+export type MatchRule = {
+	id: number,
+	field: MatchField,
+	operator: MatchOperator,
+	value: string,
+};
+
+// What we SEND. No id — rules are replaced wholesale rather than patched
+// individually, so the server assigns them fresh each time.
+export type MatchRuleIn = {
+	field: MatchField,
+	operator: MatchOperator,
+	value: string,
+};
+
 export type Tracker = {
 	id: number,
 	name: string,
@@ -11,6 +35,8 @@ export type Tracker = {
 	platform_name: string,
 	url: string,
 	description: string | null,
+	// Conditions incoming mail must satisfy to land on this tracker.
+	rules: MatchRule[],
 	date_created: string,
 	last_checked: string | null,
 	// Updates detected since last_checked. Computed by the backend, so it drops
@@ -22,9 +48,6 @@ export type Subject = {
 	id: number,
 	name: string,
 	category_name: string | null,
-	// What this subject is called on the platforms it posts to, lowercased by the
-	// backend. Matched against the local part of a notification email's sender.
-	handles: string[],
 	date_created: string,
 };
 
@@ -54,6 +77,9 @@ export type TrackerIn = {
 	url: string,
 	description?: string,
 	name?: string,
+	// Omitted entirely means "use whatever the platform suggests" — a platform
+	// with a known mail domain seeds a starting rule. Sending [] means none.
+	rules?: MatchRuleIn[],
 };
 
 // PATCH payload: every field optional, only send what changed.
@@ -61,6 +87,10 @@ export type TrackerUpdate = {
 	name?: string,
 	url?: string,
 	description?: string | null,
+	// Replaced wholesale, like the create payload. Omitting the key leaves the
+	// rules alone; [] clears them, which the server refuses when there's no URL
+	// to fall back on.
+	rules?: MatchRuleIn[],
 	// Send back the exact string the API gave us to undo a check. null restores
 	// a tracker that had never been checked.
 	last_checked?: string | null,
@@ -70,9 +100,6 @@ export type TrackerUpdate = {
 // null clears the subject's category, while omitting the key leaves it alone.
 export type SubjectUpdate = {
 	category_name?: string | null,
-	// Sent whole, never incrementally: [] clears every handle, omitting the key
-	// leaves them untouched.
-	handles?: string[],
 };
 
 export async function getTrackers(): Promise<Tracker[]> {

@@ -2,7 +2,7 @@ import os
 
 from sqlalchemy import create_engine, func, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
-from .models import PREDEFINED_PLATFORMS, Base, Platform
+from .models import PREDEFINED_PLATFORMS, Base, Platform, utcnow
 
 # Relative path by default (resolves against the working directory), which keeps
 # local dev unchanged. In Docker this is pointed at a mounted volume so the file
@@ -103,9 +103,69 @@ def seed_platforms(bind) -> None:
 		session.commit()
 
 
+def migrate_handles_to_rules(bind) -> None:
+	"""Carry retired subject handles across to per-tracker match rules.
+
+	Handles could only ever find the artist in the sender's local part. Match rules
+	replaced them because most platforms mail from a generic address and name the
+	artist in the subject line instead. The old configuration still means
+	something, though, so rather than dropping it: every handle becomes a
+	"sender contains <handle>" rule on each of that subject's trackers.
+
+	More permissive than the original — it matches anywhere in the address rather
+	than the local part exactly — which is the safe direction. A rule that catches
+	slightly too much is visible and editable; one that catches nothing looks like
+	the artist went quiet.
+
+	**At most one rule per tracker, even when the subject had several handles.**
+	Handles were alternatives: any one of them identified the subject. A tracker's
+	rules are ANDed, so turning three handles into three rules would demand a
+	sender containing all three at once and match nothing at all — the exact
+	silent failure this migration exists to avoid. The lowest handle alphabetically
+	is taken for determinism, and any others are dropped; they're visible in the
+	editor afterwards and easy to re-add as a broader rule.
+	"""
+	inspector = inspect(bind)
+	if "subject_handles" not in inspector.get_table_names():
+		return
+
+	with bind.begin() as connection:
+		pairs = connection.execute(
+			text(
+				"SELECT MIN(sh.handle), t.id FROM subject_handles sh"
+				" JOIN trackers t ON t.subject_id = sh.subject_id"
+				" GROUP BY t.id"
+			)
+		).fetchall()
+
+		for handle, tracker_id in pairs:
+			already = connection.execute(
+				text(
+					"SELECT 1 FROM match_rules WHERE tracker_id = :tracker"
+					" AND field = 'sender' AND operator = 'contains' AND value = :value"
+				),
+				{"tracker": tracker_id, "value": handle},
+			).first()
+			if already:
+				continue
+			connection.execute(
+				text(
+					"INSERT INTO match_rules (tracker_id, field, operator, value, date_created)"
+					" VALUES (:tracker, 'sender', 'contains', :value, :created)"
+				),
+				{"tracker": tracker_id, "value": handle, "created": utcnow()},
+			)
+
+		# Dropped rather than left behind, so the next boot is a no-op and nothing
+		# reads a table the models no longer describe.
+		connection.execute(text("DROP TABLE subject_handles"))
+
+
 # Order matters: create_all first, so `categories` exists before anything points
-# a foreign key at it. Then the column migrations, then seeding — which writes
-# rows and therefore needs every column to be present already.
+# a foreign key at it, and `match_rules` exists before the handle migration writes
+# into it. Then the column migrations, then seeding — which writes rows and
+# therefore needs every column present already.
 Base.metadata.create_all(bind=engine)
 ensure_schema(engine)
+migrate_handles_to_rules(engine)
 seed_platforms(engine)

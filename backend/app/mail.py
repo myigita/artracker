@@ -4,14 +4,16 @@ Most of the platforms worth following can't be polled: Patreon, SubscribeStar,
 Pixiv and X all need paid API access or a logged-in session. But they all send
 mail, and mail is something we can read without asking anyone's permission.
 
-The resolution chain is:
+Each tracker carries match rules — conditions over the sender and subject — and a
+message lands on every tracker whose rules all hold.
 
-    sender domain  -> Platform.mail_domain
-    sender local   -> SubjectHandle.handle -> Subject
-    the two of them-> the Tracker joining that subject and platform
+This replaced an earlier scheme that read the platform from the sender's domain
+and the artist from its local part. That only works where the artist's name is
+inside the address, as Patreon's is; platforms that mail from one generic address
+and name the artist in the subject line could not be expressed at all.
 
-Anything that falls out of that chain is written to `unmatched_mail` rather than
-dropped, because a poller that silently discards what it can't parse is
+Anything no tracker claims is written to `unmatched_mail` rather than dropped,
+because a poller that silently discards what it can't match is
 indistinguishable from a platform that went quiet.
 
 Splitting `fetch_unseen` (talks IMAP) from `record_message` (pure database work)
@@ -28,18 +30,15 @@ from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 
 from fastapi import Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .database import get_db
 from .models import (
 	MailAccount,
-	Platform,
-	Subject,
-	SubjectHandle,
+	MatchRule,
 	Tracker,
 	UnmatchedMail,
 	Update,
-	normalize_handle,
 	utcnow,
 )
 
@@ -246,10 +245,52 @@ def _reject(db: Session, mail: IncomingMail, reason: str) -> None:
 	)
 
 
-def record_message(db: Session, mail: IncomingMail, seen: set[str]) -> str:
-	"""Resolve one message to a tracker and record it.
+def rule_matches(rule: MatchRule, mail: IncomingMail) -> bool:
+	"""Whether one rule holds for one message.
 
-	Returns "recorded", "duplicate" or "unmatched".
+	Case-insensitive throughout. Sender addresses aren't case-sensitive in
+	practice, and nobody writing a subject-line rule means it to be exact about
+	capitalisation.
+	"""
+	haystack = (mail.sender if rule.field == "sender" else mail.subject or "").lower()
+	needle = (rule.value or "").lower()
+
+	if rule.operator == "contains":
+		return needle in haystack
+	if rule.operator == "not_contains":
+		return needle not in haystack
+	if rule.operator == "equals":
+		return haystack == needle
+	if rule.operator == "not_equals":
+		return haystack != needle
+	# An unknown operator fails closed rather than matching everything.
+	return False
+
+
+def matching_trackers(db: Session, mail: IncomingMail) -> list[Tracker]:
+	"""Every tracker whose rules all hold for this message.
+
+	All of a tracker's rules must pass, which is what makes `not_contains` useful
+	— it narrows an otherwise broad sender rule.
+
+	**A tracker with no rules never matches.** `all([])` is True, so without the
+	`tracker.rules and` guard every rule-less tracker would claim every message
+	the moment mail started arriving.
+	"""
+	trackers = db.query(Tracker).options(selectinload(Tracker.rules)).all()
+	return [
+		tracker
+		for tracker in trackers
+		if tracker.rules and all(rule_matches(rule, mail) for rule in tracker.rules)
+	]
+
+
+def record_message(db: Session, mail: IncomingMail, seen: set[str]) -> str:
+	"""Record one message against every tracker whose rules it satisfies.
+
+	Returns "recorded", "duplicate" or "unmatched". Recording on all matches
+	rather than picking the most specific one: two artists genuinely can appear in
+	the same notification, and that's information rather than an error.
 
 	`seen` collects the refs handled in this pass and is why it's a parameter
 	rather than a local. SessionLocal sets autoflush=False, so a row added moments
@@ -257,51 +298,41 @@ def record_message(db: Session, mail: IncomingMail, seen: set[str]) -> str:
 	in one batch would both pass the existence check and then collide on the
 	unique constraint at commit, failing the whole poll.
 	"""
-	ref = mail.message_id
-	if ref in seen:
+	if mail.message_id in seen:
 		return "duplicate"
-	seen.add(ref)
+	seen.add(mail.message_id)
 
-	already_recorded = db.query(Update).filter(Update.external_ref == ref).first()
-	already_rejected = db.query(UnmatchedMail).filter(UnmatchedMail.external_ref == ref).first()
-	if already_recorded or already_rejected:
+	already_rejected = (
+		db.query(UnmatchedMail).filter(UnmatchedMail.external_ref == mail.message_id).first()
+	)
+	if already_rejected:
 		return "duplicate"
 
-	local, _, domain = mail.sender.partition("@")
-
-	platform = db.query(Platform).filter(Platform.mail_domain == domain).first()
-	if platform is None:
-		_reject(db, mail, f"No platform is configured for the sender domain '{domain}'")
+	matches = matching_trackers(db, mail)
+	if not matches:
+		_reject(db, mail, "No tracker's match rules applied to this message")
 		return "unmatched"
 
-	handle = (
-		db.query(SubjectHandle)
-		.filter(SubjectHandle.handle == normalize_handle(local))
-		.first()
-	)
-	if handle is None:
-		_reject(db, mail, f"No subject has the handle '{local}'")
-		return "unmatched"
+	# Scoped per tracker, since the same message can land on several.
+	refs = [f"{tracker.id}:{mail.message_id}" for tracker in matches]
+	existing = {
+		row.external_ref
+		for row in db.query(Update).filter(Update.external_ref.in_(refs)).all()
+	}
+	if len(existing) == len(refs):
+		return "duplicate"
 
-	tracker = (
-		db.query(Tracker)
-		.filter(Tracker.subject_id == handle.subject_id, Tracker.platform_id == platform.id)
-		.first()
-	)
-	if tracker is None:
-		subject = db.query(Subject).filter(Subject.id == handle.subject_id).first()
-		name = subject.name if subject else handle.handle
-		_reject(db, mail, f"'{name}' has no '{platform.name}' tracker")
-		return "unmatched"
-
-	db.add(
-		Update(
-			tracker_id=tracker.id,
-			external_ref=ref,
-			summary=mail.subject,
-			detected_at=mail.received_at,
+	for tracker, ref in zip(matches, refs):
+		if ref in existing:
+			continue
+		db.add(
+			Update(
+				tracker_id=tracker.id,
+				external_ref=ref,
+				summary=mail.subject,
+				detected_at=mail.received_at,
+			)
 		)
-	)
 	return "recorded"
 
 

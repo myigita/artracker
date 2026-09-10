@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Tracker, Update } from '../api';
+import type { MatchRuleIn, Tracker, Update } from '../api';
 import {
 	checkTracker,
 	deleteTracker,
@@ -7,6 +7,7 @@ import {
 	getTrackerUpdates,
 	updateTracker,
 } from '../api';
+import MatchRulesEditor from './MatchRulesEditor';
 
 type Props = {
 	tracker: Tracker;
@@ -39,6 +40,11 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 	const [name, setName] = useState(tracker.name);
 	const [url, setUrl] = useState(tracker.url);
 	const [description, setDescription] = useState(tracker.description ?? '');
+	// Stripped of their ids: rules are replaced wholesale on save, so the server
+	// assigns fresh ones and sending the old ones back would be meaningless.
+	const [rules, setRules] = useState<MatchRuleIn[]>(() =>
+		tracker.rules.map(({ field, operator, value }) => ({ field, operator, value })),
+	);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	// The stamp to put back, captured before the check overwrote it. Wrapped in
@@ -123,6 +129,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 		setName(tracker.name);
 		setUrl(tracker.url);
 		setDescription(tracker.description ?? '');
+		setRules(tracker.rules.map(({ field, operator, value }) => ({ field, operator, value })));
 		setError(null);
 		setEditing(true);
 	}
@@ -140,6 +147,12 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 			// does, and it answers with a message worth showing.
 			url: url.trim(),
 			description: description.trim() || null,
+			// Blank-valued rows are dropped rather than sent: an empty rule is a
+			// half-finished thought, and the API rejects it with a schema error
+			// that says nothing useful about which row is at fault.
+			rules: rules
+				.filter((rule) => rule.value.trim())
+				.map((rule) => ({ ...rule, value: rule.value.trim() })),
 		})
 			.then(() => {
 				setEditing(false);
@@ -174,6 +187,9 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 					placeholder="Description (optional)"
 					className={`${inputClass} mt-2`}
 				/>
+				<div className="mt-4">
+					<MatchRulesEditor rules={rules} onChange={setRules} disabled={saving} />
+				</div>
 				{error && <p className="mt-2 text-sm text-red-500">{error}</p>}
 				<div className="mt-3 flex items-center gap-2">
 					<button
@@ -246,7 +262,24 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 						<CheckIcon />
 					</button>
 				)}
-				<span className="ml-auto shrink-0 text-xs text-[var(--text)]">
+				{/* Rules are only visible while editing, so the count is the only
+				    sign a card is watching mail at all — and "0 rules" on a tracker
+				    with no URL is the shape of one that can never do anything. */}
+				{tracker.rules.length > 0 && (
+					<span
+						title={tracker.rules
+							.map((r) => `${r.field} ${r.operator.replace('_', ' ')} “${r.value}”`)
+							.join('\n')}
+						className="ml-auto shrink-0 text-xs text-[var(--text)]"
+					>
+						{tracker.rules.length === 1 ? '1 rule' : `${tracker.rules.length} rules`}
+					</span>
+				)}
+				<span
+					className={`shrink-0 text-xs text-[var(--text)] ${
+						tracker.rules.length > 0 ? '' : 'ml-auto'
+					}`}
+				>
 					{timeAgo(tracker.last_checked)}
 				</span>
 				{undo && (
