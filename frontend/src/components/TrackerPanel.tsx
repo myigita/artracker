@@ -18,18 +18,20 @@ import AddNameForm from './AddNameForm';
 import NameList from './NameList';
 import SubjectCategorySelect from './SubjectCategorySelect';
 import BackupPanel from './BackupPanel';
+import SettingsPanel from './SettingsPanel';
 import TitleBar from './TitleBar';
 
 // Only one form is open at a time, so a single value beats four booleans —
 // it makes "these are mutually exclusive" true by construction.
 type OpenForm = 'tracker' | 'subject' | 'platform' | 'category' | null;
-type Tab = 'trackers' | 'subjects' | 'platforms' | 'categories' | 'backup';
+type Tab = 'trackers' | 'subjects' | 'platforms' | 'categories' | 'settings' | 'backup';
 
 const TABS: { id: Tab; label: string }[] = [
 	{ id: 'trackers', label: 'Trackers' },
 	{ id: 'subjects', label: 'Subjects' },
 	{ id: 'platforms', label: 'Platforms' },
 	{ id: 'categories', label: 'Categories' },
+	{ id: 'settings', label: 'Settings' },
 	{ id: 'backup', label: 'Backup' },
 ];
 
@@ -124,6 +126,8 @@ export default function TrackerPanel() {
 		subjects: subjects.length,
 		platforms: platforms.length,
 		categories: categories.length,
+		// Both are pairs of actions rather than lists, so neither has a count.
+		settings: null,
 		backup: null,
 	};
 
@@ -133,6 +137,7 @@ export default function TrackerPanel() {
 		subjects: 'subject',
 		platforms: 'platform',
 		categories: 'category',
+		settings: null,
 		backup: null,
 	};
 
@@ -141,6 +146,7 @@ export default function TrackerPanel() {
 		subjects: '+ Add subject',
 		platforms: '+ Add platform',
 		categories: '+ Add category',
+		settings: '',
 		backup: '',
 	};
 
@@ -273,9 +279,17 @@ export default function TrackerPanel() {
 						label="Platform"
 						items={platforms}
 						usageCount={platformUsage}
+						// The backend refuses these and recreates them on every start, so
+						// offering a button that always 409s would just be a trap.
+						isProtected={(item) => item.is_preset}
+						protectedHint="Built in — recreated on every start, so it can’t be deleted."
 						onDelete={deletePlatform}
 						onDeleted={fetchPlatforms}
 					/>
+				)}
+
+				{!loading && !loadError && tab === 'settings' && (
+					<SettingsPanel onPolled={fetchTrackers} />
 				)}
 
 				{!loading && !loadError && tab === 'backup' && (

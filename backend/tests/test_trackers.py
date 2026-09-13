@@ -34,7 +34,7 @@ def test_create_tracker(client, subject, platform):
 def test_name_defaults_to_subject_and_platform(client, subject, platform):
 	body = make_tracker(client, subject, platform).json()
 
-	assert body["name"] == "Denji - Pixiv"
+	assert body["name"] == "Denji (Pixiv)"
 
 
 def test_explicit_name_is_kept(client, subject, platform):
@@ -249,9 +249,16 @@ def test_update_rejects_empty_name(client, subject, platform):
 
 
 def test_update_rejects_empty_url(client, subject, platform):
+	"""400 rather than the 422 this used to be.
+
+	The URL is no longer unconditionally required — a mail-tracked platform has
+	no page to open — so blank has to reach the route for it to apply the actual
+	rule. Pixiv isn't mail-tracked, so it's still refused, now with a reason
+	instead of a schema error.
+	"""
 	created = make_tracker(client, subject, platform).json()
 
-	assert client.patch(f"/api/trackers/{created['id']}", json={"url": ""}).status_code == 422
+	assert client.patch(f"/api/trackers/{created['id']}", json={"url": ""}).status_code == 400
 
 
 def test_update_missing_tracker_404s(client):
@@ -278,8 +285,12 @@ def test_create_rejects_oversized_field(client, subject, platform):
 
 
 def test_create_rejects_empty_url(client, subject, platform):
-	"""POST used to accept url="" while PATCH rejected it — inconsistent."""
-	assert make_tracker(client, subject, platform, url="").status_code == 422
+	"""Still refused for a link-only platform, now as a 400 with the reason.
+
+	POST once accepted url="" while PATCH rejected it; both now go through the
+	same check, which asks the platform rather than the schema.
+	"""
+	assert make_tracker(client, subject, platform, url="").status_code == 400
 
 
 def test_create_rejects_whitespace_only_name(client, subject, platform):
@@ -406,3 +417,143 @@ def test_tracker_subject_category_follows_the_subject(client, subject, platform,
 	client.patch(f"/api/subjects/{subject['id']}", json={"category_name": None})
 
 	assert client.get("/api/trackers/").json()[0]["subject_category"] is None
+
+
+# ---- URL is only required where it does something ---------------------------
+
+def mail_platform(client):
+	"""A platform that receives notification mail, so trackers on it need no link."""
+	return client.post(
+		"/api/platforms/",
+		json={"name": "Patreon - Mail", "mail_domain": "creator.patreon.com"},
+	).json()
+
+
+def test_a_platform_domain_is_not_used_as_an_artist_rule(client, subject):
+	mail_platform(client)
+
+	response = client.post(
+		"/api/trackers/",
+		json={"subject_name": subject["name"], "platform_name": "Patreon - Mail"},
+	)
+
+	assert response.status_code == 400
+	assert "match rule" in response.json()["detail"]
+
+
+def test_a_mail_tracker_with_a_specific_rule_needs_no_url(client, subject):
+	mail_platform(client)
+
+	response = client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": "Patreon - Mail",
+			"rules": [{"field": "sender", "operator": "contains", "value": "denji"}],
+		},
+	)
+
+	assert response.status_code == 201
+	assert response.json()["url"] == ""
+
+
+def test_a_tracker_with_neither_url_nor_rules_is_rejected(client, subject, platform):
+	# Pixiv has no mail domain to inherit a rule from, so this tracker would have
+	# no link to open and nothing to catch mail with — it would do nothing at all.
+	response = client.post(
+		"/api/trackers/",
+		json={"subject_name": subject["name"], "platform_name": platform["name"]},
+	)
+
+	assert response.status_code == 400
+	assert "match rule" in response.json()["detail"]
+
+
+def test_rules_alone_are_enough_without_a_url(client, subject, platform):
+	response = client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": platform["name"],
+			"rules": [{"field": "sender", "operator": "contains", "value": "pixiv.net"}],
+		},
+	)
+
+	assert response.status_code == 201
+	assert response.json()["url"] == ""
+	assert len(response.json()["rules"]) == 1
+
+
+def test_a_blank_url_is_treated_as_absent(client, subject, platform):
+	response = client.post(
+		"/api/trackers/",
+		json={"subject_name": subject["name"], "platform_name": platform["name"], "url": "   "},
+	)
+
+	assert response.status_code == 400
+
+
+def test_the_url_can_be_cleared_when_rules_remain(client, subject):
+	mail_platform(client)
+	created = client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": "Patreon - Mail",
+			"url": "https://patreon.com/peargor",
+			"rules": [{"field": "sender", "operator": "contains", "value": "peargor"}],
+		},
+	).json()
+
+	response = client.patch(f"/api/trackers/{created['id']}", json={"url": ""})
+
+	assert response.status_code == 200
+	assert response.json()["url"] == ""
+
+
+def test_the_url_cannot_be_cleared_when_there_are_no_rules(client, subject, platform):
+	# Clearing it would leave the tracker with nothing to do.
+	created = client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": platform["name"],
+			"url": "https://example.test/a",
+		},
+	).json()
+
+	response = client.patch(f"/api/trackers/{created['id']}", json={"url": ""})
+
+	assert response.status_code == 400
+	assert client.get(f"/api/trackers/{created['id']}").json()["url"] == "https://example.test/a"
+
+
+def test_the_rules_cannot_be_cleared_when_there_is_no_url(client, subject, platform):
+	# The mirror image, and the same reason.
+	created = client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": platform["name"],
+			"rules": [{"field": "sender", "operator": "contains", "value": "pixiv.net"}],
+		},
+	).json()
+
+	assert client.patch(f"/api/trackers/{created['id']}", json={"rules": []}).status_code == 400
+
+
+def test_the_default_name_uses_parentheses(client, subject):
+	mail_platform(client)
+
+	body = client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": "Patreon - Mail",
+			"rules": [{"field": "sender", "operator": "contains", "value": "denji"}],
+		},
+	).json()
+
+	# Parentheses rather than a dash, so a platform whose own name contains a dash
+	# ("Patreon - Mail") still reads as one thing.
+	assert body["name"] == "Denji (Patreon - Mail)"

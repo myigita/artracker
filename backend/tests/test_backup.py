@@ -137,7 +137,27 @@ def test_replace_removes_data_absent_from_the_file(client):
 
 	assert body["deleted"] > 0
 	assert [s["name"] for s in client.get("/api/subjects/").json()] == ["Denji"]
-	assert [p["name"] for p in client.get("/api/platforms/").json()] == ["Pixiv"]
+	assert [p["name"] for p in client.get("/api/platforms/").json()] == [
+		"Patreon - Mail", "Pixiv"
+	]
+
+
+def test_replace_with_an_old_backup_restores_built_in_platforms(client):
+	client.post(
+		"/api/platforms/",
+		json={"name": "Patreon - Mail", "mail_domain": "creator.patreon.com"},
+	)
+
+	response = client.post(
+		"/api/backup/import?mode=replace",
+		json={"version": 1, "platforms": []},
+	)
+
+	assert response.status_code == 200
+	platforms = client.get("/api/platforms/").json()
+	assert [(p["name"], p["mail_domain"]) for p in platforms] == [
+		("Patreon - Mail", "creator.patreon.com")
+	]
 
 
 def test_replace_is_idempotent(client):

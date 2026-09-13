@@ -5,6 +5,7 @@ second instance. Everything the UI does is available here; there is no private
 endpoint.
 
 - **Base URL, local dev:** `http://localhost:8000`
+- **27 endpoints**, all listed below
 - **Machine-readable spec:** `GET /openapi.json` · interactive console at `/docs`
   — **both are disabled when `ARTRACKER_ENV=production`**, so on the deployed
   instance they 404. Use this document there.
@@ -137,20 +138,31 @@ already tracked before deciding what to add.
 | `GET` | `/api/trackers/{id}` | 404 if missing |
 | `POST` | `/api/trackers/` | **201.** 400 if the subject or platform doesn't exist |
 | `PATCH` | `/api/trackers/{id}` | Partial update · 404 if missing |
+| `GET` | `/api/trackers/{id}/updates` | Detected updates, newest first · 404 if missing |
 | `POST` | `/api/trackers/{id}/check` | Stamps `last_checked` to now, returns the tracker |
 | `DELETE` | `/api/trackers/{id}` | **200**, returns the deleted row |
 
-**`POST` body** — `subject_name`, `platform_name` and `url` are required:
+**`POST` body** — `subject_name` and `platform_name` are required; `url` is not:
 
 ```json
 {
   "subject_name": "Kentaro Miura",
   "platform_name": "Bluesky",
   "url": "https://bsky.app/profile/miura.example",
-  "name": "optional, defaults to \"Subject - Platform\"",
-  "description": "optional"
+  "name": "optional, defaults to \"Subject (Platform)\"",
+  "description": "optional",
+  "rules": [
+    { "field": "sender", "operator": "contains", "value": "peargor" }
+  ]
 }
 ```
+
+> **A tracker needs a URL or at least one match rule**, and 400s with neither.
+> URL only is a manual bookmark. Rules only is an artist watched purely through
+> notification mail, with no page to open. Both is the useful case.
+>
+> Omitted `rules` and `[]` both mean no rules. A platform domain is shared by
+> every artist there, so it is never installed as an automatic tracker rule.
 
 > **No auto-create.** If the subject or platform doesn't already exist this
 > returns **400**, it does not create them. Create them first (treating 409 as
@@ -160,11 +172,15 @@ already tracked before deciding what to add.
 omitting a key is different from sending `null`:
 
 ```json
-{ "name": "…", "url": "…", "description": null, "last_checked": null }
+{ "name": "…", "url": "…", "description": null, "rules": [], "last_checked": null }
 ```
 
 `description` and `last_checked` accept `null` (clearing a description, undoing a
-check). `name` and `url` do not — an explicit `null` there returns 400.
+check). `name` does not — an explicit `null` there returns 400.
+
+`url` and `rules` may each be emptied, but **not both**: whichever you clear, the
+other has to remain, or the request 400s. Rules are replaced wholesale — send the
+full list you want, not a delta.
 
 **Response shape:**
 
@@ -177,13 +193,66 @@ check). `name` and `url` do not — an explicit `null` there returns 400.
   "platform_name": "Bluesky",
   "url": "https://bsky.app/profile/miura.example",
   "description": null,
+  "rules": [
+    { "id": 4, "field": "sender", "operator": "contains", "value": "bsky.app" }
+  ],
   "date_created": "2026-08-14T17:59:00.799257+00:00",
-  "last_checked": null
+  "last_checked": null,
+  "unread_count": 0
 }
 ```
 
 `subject_category` is derived from the tracker's subject — it is read-only here,
 and changes when you recategorize the subject.
+
+`unread_count` is updates detected since `last_checked`, computed rather than
+stored. `POST /{id}/check` therefore drops it to zero, and PATCHing `last_checked`
+back to an earlier value (or `null`) brings it back.
+
+### Match rules
+
+What makes a message land on a tracker. **Every rule on a tracker must hold** —
+they are ANDed, which is what makes the negative operators useful ("from this
+sender, but not the weekly digest").
+
+| Key | Values |
+|-----|--------|
+| `field` | `sender` · `subject` |
+| `operator` | `contains` · `not_contains` · `equals` · `not_equals` |
+| `value` | 1–500 characters |
+
+Matching is case-insensitive on both sides. `sender` is the bare address with the
+display name stripped, so `Pear哥 <peargor@creator.patreon.com>` matches a rule
+against `peargor@creator.patreon.com` but not one against `Pear哥`.
+
+Every non-empty rule set needs at least one positive `contains` or `equals` rule.
+`not_contains` and `not_equals` only narrow that positive match; alone they would
+accept nearly every unrelated message in the mailbox.
+
+**A tracker with no rules never matches anything**, deliberately — otherwise every
+rule-less tracker would claim every message. One message *can* land on several
+trackers, and records an update on each.
+
+The message body is not a field. Headers are already in hand after a fetch;
+bodies mean parsing multipart HTML, and that is where false positives live.
+
+### Updates
+
+`GET /api/trackers/{id}/updates` returns what the poller has recorded:
+
+```json
+[
+  {
+    "id": 12,
+    "tracker_id": 1,
+    "summary": "August Character Poll",
+    "detected_at": "2026-08-30T04:42:00+00:00"
+  }
+]
+```
+
+`summary` is the notification's subject line. Updates are deleted with their
+tracker.
 
 ### Subjects
 
@@ -214,12 +283,105 @@ Identical shape to each other:
 Body is `{ "name": "…" }`. Deleting a platform 409s while any **tracker** uses it;
 deleting a category 409s while any **subject** uses it.
 
+Platforms take one extra optional field:
+
+```json
+POST /api/platforms/  { "name": "Patreon - Mail", "mail_domain": "creator.patreon.com" }
+```
+
+`mail_domain` tells the UI that the platform supports notification mail and gives
+it a useful hint. It is not installed as a rule because the same domain is shared
+by every artist. It is unique across platforms, and 409s if another claims it.
+
+Platform responses also carry **`is_preset`**. The app seeds a small set of known
+platforms at startup and **refuses to delete them (409)** — deleting would appear
+to work and then have the row reappear on the next restart.
+
+### Notification mail
+
+How updates are actually detected. The app reads a gathering mailbox over IMAP and
+records an update on every tracker whose rules the message satisfies.
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `POST` | `/api/mail/poll` | Read the mailbox once, now · **503** unconfigured · **502** unreachable |
+| `GET` | `/api/mail/unmatched` | Mail that matched no tracker, newest first |
+| `DELETE` | `/api/mail/unmatched/{id}` | **204** · dismiss one · 404 if missing |
+| `GET` | `/api/mail/account` | Mailbox settings — **never the password** |
+| `PUT` | `/api/mail/account` | Save them · 400 if no password was ever set |
+| `DELETE` | `/api/mail/account` | **204** · forget them · 404 if none stored |
+| `GET` | `/api/mail/schedule` | The background poller's settings |
+| `PUT` | `/api/mail/schedule` | Change them |
+
+**Poll response:**
+
+```json
+{ "fetched": 3, "recorded": 2, "duplicates": 0, "unmatched": 1 }
+```
+
+Safe to call as often as you like: each recorded update is keyed by the message's
+`Message-ID` scoped to its tracker, so re-reading the same mail records nothing new.
+The poller also saves the mailbox's IMAP UID cursor and fetches headers with
+`BODY.PEEK`, so opening a message in Gmail neither hides it from Artracker nor has
+its read state changed by Artracker. The cursor advances only with the database
+transaction that records the batch.
+
+**Unmatched mail is a diagnostic, not a queue.** Sender addresses and subject
+formats change without notice, and a poller that silently dropped what it couldn't
+match would look exactly like an artist who stopped posting. Each row carries the
+`reason` it was rejected.
+
+#### Mailbox credentials
+
+```json
+GET   → { "host": "imap.gmail.com", "port": 993, "username": "gather@example.com",
+          "mailbox": "INBOX", "has_password": true, "source": "database" }
+PUT   ← { "host": "…", "port": 993, "username": "…", "password": "…", "mailbox": "INBOX" }
+```
+
+- **The password is never returned by any endpoint**, and is not in the backup
+  document. `has_password` is all you get. Every endpoint here is unauthenticated,
+  so a password on a response model is a password served to anyone who can reach
+  the app.
+- **Omit `password` on `PUT` to keep a database-stored password.** Environment
+  credentials cannot be copied through the API, so the first save from
+  `source: "environment"` must include the app password again. An empty string is
+  rejected rather than treated as a clear.
+- `source` is `database`, `environment` or `unset`. A stored account wins over the
+  `ARTRACKER_MAIL_*` environment variables; those remain as a fallback, so
+  `DELETE` degrades to them rather than switching the feature off.
+
+#### Schedule
+
+```json
+GET → { "enabled": false, "interval_minutes": 15, "last_run_at": null,
+        "last_result": null, "next_run_at": null }
+PUT ← { "enabled": true, "interval_minutes": 30 }
+```
+
+- **`interval_minutes` is 5–1440.** Anything outside that 422s. Five is the floor
+  because IMAP servers rate-limit and notification mail arrives in bursts anyway.
+- Off by default. The poller runs inside the app process, so there is nothing to
+  configure on the host.
+- `last_result` is a one-line summary of the last pass, or the error it failed
+  with — a background poller has no request to watch fail, so it is the only
+  feedback there is.
+- A schedule that has never run is due immediately. Afterwards `next_run_at` is
+  computed from `last_run_at`. Manual checks update the same last/next-run state.
+
 ### Backup
 
 | Method | Path | Notes |
 |--------|------|-------|
 | `GET` | `/api/backup/export` | The whole database as one document |
 | `POST` | `/api/backup/import?mode=merge\|replace` | Defaults to `merge` |
+
+The document carries match rules and platform mail domains, since both are
+configuration. It does **not** carry detected updates, unmatched mail, or the
+mailbox password — the first two are re-derivable signals rather than settings,
+and the third has no business in a file you download and pass around.
+Replace imports also restore any missing built-in platforms, so a version-1 backup
+from before Patreon Mail existed cannot leave the preset missing.
 
 ---
 
@@ -231,6 +393,8 @@ deleting a category 409s while any **subject** uses it.
 | `404` | No row with that id |
 | `409` | Name already taken, or the row is still referenced by something else |
 | `422` | Body failed validation — missing field, wrong type, blank or oversized string |
+| `502` | The mailbox could not be reached — the app is fine, the mail server isn't |
+| `503` | No mailbox is configured yet |
 
 **409 is usually success in disguise.** When an agent is ensuring a subject
 exists, "it already exists" is the desired end state, not an error. The web UI
@@ -246,6 +410,8 @@ these are the only real bound.
 | `name` (all tables) | 1–255 characters |
 | `url` | 1–2000 characters |
 | `description` | ≤ 1000 characters |
+| match rule `value` | 1–500 characters, ≤ 25 rules per tracker |
+| `interval_minutes` | 5–1440 |
 
 Strings are stripped of surrounding whitespace, so `"  Denji  "` is stored as
 `"Denji"` and `"   "` is rejected as blank with a 422.

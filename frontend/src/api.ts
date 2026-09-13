@@ -2,6 +2,30 @@ import axios from 'axios';
 
 const api = axios.create({ baseURL: '/api' });
 
+// Which part of a message a rule looks at. The body is deliberately not an
+// option: headers are already in hand after a fetch, bodies mean parsing
+// multipart HTML, and that's where false positives live.
+export type MatchField = 'sender' | 'subject';
+
+// The negative forms are what make a broad sender rule usable — "from Patreon,
+// but not the weekly digest".
+export type MatchOperator = 'contains' | 'not_contains' | 'equals' | 'not_equals';
+
+export type MatchRule = {
+	id: number,
+	field: MatchField,
+	operator: MatchOperator,
+	value: string,
+};
+
+// What we SEND. No id — rules are replaced wholesale rather than patched
+// individually, so the server assigns them fresh each time.
+export type MatchRuleIn = {
+	field: MatchField,
+	operator: MatchOperator,
+	value: string,
+};
+
 export type Tracker = {
 	id: number,
 	name: string,
@@ -11,8 +35,13 @@ export type Tracker = {
 	platform_name: string,
 	url: string,
 	description: string | null,
+	// Conditions incoming mail must satisfy to land on this tracker.
+	rules: MatchRule[],
 	date_created: string,
 	last_checked: string | null,
+	// Updates detected since last_checked. Computed by the backend, so it drops
+	// to 0 the moment a check lands — no client-side bookkeeping.
+	unread_count: number,
 };
 
 export type Subject = {
@@ -25,6 +54,12 @@ export type Subject = {
 export type Platform = {
 	id: number,
 	name: string,
+	// Sender domain of this platform's notification mail, or null for a plain
+	// saved link with no automatic updates.
+	mail_domain: string | null,
+	// Seeded by the app and refused deletion — the backend recreates it on every
+	// start, so deleting would only appear to work.
+	is_preset: boolean,
 	date_created: string,
 };
 
@@ -42,6 +77,9 @@ export type TrackerIn = {
 	url: string,
 	description?: string,
 	name?: string,
+	// Omitted and [] both mean no rules. Platform domains are deliberately not
+	// defaults because one domain is shared by every artist on that platform.
+	rules?: MatchRuleIn[],
 };
 
 // PATCH payload: every field optional, only send what changed.
@@ -49,6 +87,10 @@ export type TrackerUpdate = {
 	name?: string,
 	url?: string,
 	description?: string | null,
+	// Replaced wholesale, like the create payload. Omitting the key leaves the
+	// rules alone; [] clears them, which the server refuses when there's no URL
+	// to fall back on.
+	rules?: MatchRuleIn[],
 	// Send back the exact string the API gave us to undo a check. null restores
 	// a tracker that had never been checked.
 	last_checked?: string | null,
@@ -166,6 +208,116 @@ export async function exportBackup(): Promise<unknown> {
 export async function importBackup(data: unknown, mode: ImportMode): Promise<ImportResult> {
 	const response = await api.post<ImportResult>('/backup/import', data, { params: { mode } });
 	return response.data;
+}
+
+// ---- Notification mail -----------------------------------------------------
+
+export type Update = {
+	id: number,
+	tracker_id: number,
+	summary: string | null,
+	detected_at: string,
+};
+
+// Mail that arrived but resolved to no tracker. Surfaced rather than dropped:
+// sender addresses and subject formats change without warning, and silently
+// discarded mail looks exactly like an artist who stopped posting.
+export type UnmatchedMail = {
+	id: number,
+	sender: string,
+	subject: string | null,
+	reason: string,
+	received_at: string,
+};
+
+export type PollResult = {
+	fetched: number,
+	recorded: number,
+	duplicates: number,
+	unmatched: number,
+};
+
+// Note the absence of a password field: the API never sends one back. The form
+// starts blank and only submits a password when the user is actually changing it.
+export type MailAccount = {
+	host: string,
+	port: number,
+	username: string,
+	mailbox: string,
+	has_password: boolean,
+	// Where the mailbox currently in effect came from. "environment" means the
+	// container was configured with ARTRACKER_MAIL_* and nothing is stored.
+	source: 'database' | 'environment' | 'unset',
+};
+
+export type MailAccountIn = {
+	host: string,
+	port: number,
+	username: string,
+	mailbox: string,
+	// Omitted entirely to keep the stored password.
+	password?: string,
+};
+
+export async function getMailAccount(): Promise<MailAccount> {
+	const response = await api.get<MailAccount>('/mail/account');
+	return response.data;
+}
+
+export async function setMailAccount(data: MailAccountIn): Promise<MailAccount> {
+	const response = await api.put<MailAccount>('/mail/account', data);
+	return response.data;
+}
+
+export async function clearMailAccount(): Promise<void> {
+	await api.delete('/mail/account');
+}
+
+// The background poller's schedule. Five minutes is the server-side floor.
+export type PollSchedule = {
+	enabled: boolean,
+	interval_minutes: number,
+	last_run_at: string | null,
+	// One line about the last pass, or the error it failed with. A background
+	// poller has no request to watch fail, so this is the only feedback there is.
+	last_result: string | null,
+	next_run_at: string | null,
+};
+
+export type PollScheduleIn = {
+	enabled: boolean,
+	interval_minutes: number,
+};
+
+export async function getPollSchedule(): Promise<PollSchedule> {
+	const response = await api.get<PollSchedule>('/mail/schedule');
+	return response.data;
+}
+
+export async function setPollSchedule(data: PollScheduleIn): Promise<PollSchedule> {
+	const response = await api.put<PollSchedule>('/mail/schedule', data);
+	return response.data;
+}
+
+export async function getTrackerUpdates(id: number): Promise<Update[]> {
+	const response = await api.get<Update[]>(`/trackers/${id}/updates`);
+	return response.data;
+}
+
+// 503 when the mailbox env vars aren't set, 502 when the mailbox can't be read —
+// both carry a `detail` worth showing, hence errorDetail at the call site.
+export async function pollMail(): Promise<PollResult> {
+	const response = await api.post<PollResult>('/mail/poll');
+	return response.data;
+}
+
+export async function getUnmatchedMail(): Promise<UnmatchedMail[]> {
+	const response = await api.get<UnmatchedMail[]>('/mail/unmatched');
+	return response.data;
+}
+
+export async function dismissUnmatchedMail(id: number): Promise<void> {
+	await api.delete(`/mail/unmatched/${id}`);
 }
 
 export function errorDetail(error: unknown): string | null {
