@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import type { Subject, Platform } from '../api';
+import type { Subject, Platform, MatchRuleIn } from '../api';
+import MatchRulesEditor from './MatchRulesEditor';
 import {
 	getSubjects,
 	getPlatforms,
@@ -32,6 +33,7 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 	const [platformChoice, setPlatformChoice] = useState('');
 	const [newPlatform, setNewPlatform] = useState('');
 
+	const [ruleDrafts, setRuleDrafts] = useState<Record<string, MatchRuleIn[]>>({});
 	const [url, setUrl] = useState('');
 	const [name, setName] = useState('');
 	const [description, setDescription] = useState('');
@@ -48,15 +50,23 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 	const subjectName = subjectChoice === NEW ? newSubject.trim() : subjectChoice;
 	const platformName = platformChoice === NEW ? newPlatform.trim() : platformChoice;
 
-	// A platform that receives notification mail has somewhere for updates to come
-	// from, so a tracker on it is useful with no link at all. Anything else is a
-	// saved link, and a saved link with no link does nothing. A brand-new platform
-	// has no mail domain yet, so it falls on the required side.
 	const selectedPlatform = platforms.find((p) => p.name === platformName);
-	const urlRequired = !selectedPlatform?.mail_domain;
-
-	const canSubmit =
-		Boolean(subjectName && platformName && (url.trim() || !urlRequired)) && !saving;
+	const isMail = Boolean(selectedPlatform?.mail_domain);
+	// Keep each platform's draft when switching the dropdown. Start with one empty
+	// positive rule: the platform domain is only a hint and is shared by every
+	// artist, so submitting it as the rule would send all Patreon mail everywhere.
+	const rules: MatchRuleIn[] = isMail
+		? ruleDrafts[platformName] ?? [{
+			field: 'sender', operator: 'contains', value: '',
+		}]
+		: [];
+	const validRules = rules.filter((rule) => rule.value.trim());
+	const hasPositiveRule = validRules.some((rule) =>
+		rule.operator === 'contains' || rule.operator === 'equals');
+	const urlRequired = validRules.length === 0;
+	const canSubmit = Boolean(subjectName && platformName &&
+		(url.trim() || validRules.length) &&
+		(validRules.length === 0 || hasPositiveRule)) && !saving;
 
 	async function handleSubmit(event: React.FormEvent) {
 		// Without this the browser does a full page reload and the SPA dies.
@@ -77,6 +87,7 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 				// Sent even when blank: the backend decides whether this platform
 				// can go without one, so the rule lives in exactly one place.
 				url: url.trim(),
+				rules: validRules.map((rule) => ({ ...rule, value: rule.value.trim() })),
 				...(name.trim() && { name: name.trim() }),
 				...(description.trim() && { description: description.trim() }),
 			});
@@ -156,7 +167,7 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 					placeholder="https://…"
 					className={inputClass}
 				/>
-				{!urlRequired && (
+				{isMail && (
 					<p className="mt-1 text-xs text-[var(--text)]">
 						{platformName} is tracked by email, so this only matters if you also
 						want somewhere to click through to.
@@ -185,6 +196,17 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 					/>
 				</div>
 			</div>
+
+			{isMail && (
+				<div className="mt-4">
+					<MatchRulesEditor
+						rules={rules}
+						onChange={(next) => setRuleDrafts((drafts) => ({ ...drafts, [platformName]: next }))}
+						disabled={saving}
+						valueHint={subjectName || 'artist handle'}
+					/>
+				</div>
+			)}
 
 			{error && <p className="mt-3 text-sm text-red-500">{error}</p>}
 

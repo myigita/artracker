@@ -97,6 +97,29 @@ def test_noop_on_an_empty_database(tmp_path):
 
 	assert inspect(engine).get_table_names() == []
 
+
+OLD_POLL_SCHEDULE = """
+CREATE TABLE poll_schedule (
+	id INTEGER NOT NULL,
+	enabled BOOLEAN NOT NULL,
+	interval_minutes INTEGER NOT NULL,
+	last_run_at DATETIME,
+	last_result VARCHAR(500),
+	PRIMARY KEY (id)
+)
+"""
+
+
+def test_ensure_schema_adds_the_imap_uid_cursor(tmp_path):
+	engine = create_engine(f"sqlite:///{tmp_path}/old-schedule.db")
+	with engine.begin() as connection:
+		connection.execute(text(OLD_POLL_SCHEDULE))
+	Base.metadata.create_all(bind=engine)
+
+	ensure_schema(engine)
+
+	assert {"last_uid", "uid_validity"} <= columns_of(engine, "poll_schedule")
+
 # platforms exactly as it was before notification mail existed.
 OLD_PLATFORMS = """
 CREATE TABLE platforms (

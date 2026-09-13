@@ -117,6 +117,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 	}
 
 	function handleDelete() {
+		if (!window.confirm(`Delete “${tracker.name}” and its recorded updates? This cannot be undone.`)) return;
 		setError(null);
 		deleteTracker(tracker.id)
 			.then(() => onDeleted())
@@ -132,6 +133,21 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 		setRules(tracker.rules.map(({ field, operator, value }) => ({ field, operator, value })));
 		setError(null);
 		setEditing(true);
+	}
+
+	function toggleEditing() {
+		if (saving) return;
+		if (editing) setEditing(false);
+		else startEditing();
+	}
+
+	function handleCardClick(event: React.MouseEvent<HTMLDivElement>) {
+		const target = event.target;
+		if (!(target instanceof Element)) return;
+		// Nested actions and the expanded form handle their own clicks.
+		if (target.closest('button, a, input, select, textarea, label, form')) return;
+		if (window.getSelection()?.toString()) return;
+		toggleEditing();
 	}
 
 	function handleSave(event: React.FormEvent) {
@@ -162,57 +178,9 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 			.finally(() => setSaving(false));
 	}
 
-	if (editing) {
-		return (
-			<form
-				onSubmit={handleSave}
-				className="rounded-lg border border-[var(--accent-border)] p-4 shadow-sm"
-			>
-				<input
-					autoFocus
-					value={name}
-					onChange={(e) => setName(e.target.value)}
-					placeholder="Name"
-					className={inputClass}
-				/>
-				<input
-					value={url}
-					onChange={(e) => setUrl(e.target.value)}
-					placeholder="URL"
-					className={`${inputClass} mt-2`}
-				/>
-				<input
-					value={description}
-					onChange={(e) => setDescription(e.target.value)}
-					placeholder="Description (optional)"
-					className={`${inputClass} mt-2`}
-				/>
-				<div className="mt-4">
-					<MatchRulesEditor rules={rules} onChange={setRules} disabled={saving} />
-				</div>
-				{error && <p className="mt-2 text-sm text-red-500">{error}</p>}
-				<div className="mt-3 flex items-center gap-2">
-					<button
-						type="submit"
-						disabled={saving || !name.trim()}
-						className="cursor-pointer rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-					>
-						{saving ? 'Saving…' : 'Save'}
-					</button>
-					<button
-						type="button"
-						onClick={() => setEditing(false)}
-						className="cursor-pointer rounded-md px-3 py-1.5 text-sm text-[var(--text)] transition-colors hover:text-[var(--text-h)]"
-					>
-						Cancel
-					</button>
-				</div>
-			</form>
-		);
-	}
 
 	return (
-		<div className="rounded-lg border border-[var(--border)] p-4 shadow-sm transition-colors hover:border-[var(--accent-border)]">
+		<div onClick={handleCardClick} className="group/card cursor-pointer rounded-lg border border-[var(--border)] p-4 shadow-sm transition-colors hover:border-[var(--accent-border)]">
 			<div className="flex items-center gap-2">
 				<h3 className="truncate font-semibold text-[var(--text-h)]">{tracker.name}</h3>
 				{/* Only when there's something to report. A "0" on every card would
@@ -257,7 +225,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 						onClick={handleMarkChecked}
 						title="Mark as checked — there's no link on this tracker"
 						aria-label={`Mark ${tracker.name} as checked`}
-						className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-colors hover:text-[var(--accent)] focus-visible:text-[var(--accent)]"
+						className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-colors hover:text-green-500 focus-visible:text-green-500"
 					>
 						<CheckIcon />
 					</button>
@@ -295,21 +263,79 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 				)}
 				<button
 					type="button"
-					onClick={startEditing}
-					aria-label={`Edit ${tracker.name}`}
-					className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-colors hover:text-[var(--accent)] focus-visible:text-[var(--accent)]"
-				>
-					<PencilIcon />
-				</button>
-				<button
-					type="button"
 					onClick={handleDelete}
 					aria-label={`Delete ${tracker.name}`}
-					className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-colors hover:text-red-500 focus-visible:text-red-500"
+					className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-[color,opacity] hover:text-red-500 focus-visible:text-red-500 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/card:opacity-100 [@media(hover:hover)]:group-focus-within/card:opacity-100 motion-reduce:transition-none"
 				>
 					<CloseIcon />
 				</button>
+				<button
+					type="button"
+					onClick={toggleEditing}
+					disabled={saving}
+					aria-expanded={editing}
+					aria-controls={`tracker-editor-${tracker.id}`}
+					aria-label={`${editing ? 'Collapse' : 'Expand'} ${tracker.name}`}
+					className="shrink-0 cursor-pointer p-1 text-[var(--text)] transition-colors hover:text-[var(--accent)] focus-visible:text-[var(--accent)]"
+				>
+					<span className={`flex transition-transform duration-200 motion-reduce:transition-none ${editing ? 'rotate-180' : ''}`}><ChevronIcon /></span>
+				</button>
 			</div>
+			<div
+				id={`tracker-editor-${tracker.id}`}
+				aria-hidden={!editing}
+				inert={!editing}
+				className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${editing ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+			>
+				<div className="min-h-0 overflow-hidden">
+			<form
+				onSubmit={handleSave}
+				className="mt-4 cursor-auto border-t border-[var(--border)] pt-4"
+			>
+				<input
+					value={name}
+					onChange={(e) => setName(e.target.value)}
+					placeholder="Name"
+					aria-label="Name"
+					className={inputClass}
+				/>
+				<input
+					value={url}
+					onChange={(e) => setUrl(e.target.value)}
+					placeholder="URL"
+					aria-label="URL"
+					className={`${inputClass} mt-2`}
+				/>
+				<input
+					value={description}
+					onChange={(e) => setDescription(e.target.value)}
+					placeholder="Description (optional)"
+					aria-label="Description (optional)"
+					className={`${inputClass} mt-2`}
+				/>
+				<div className="mt-4">
+					<MatchRulesEditor rules={rules} onChange={setRules} disabled={saving} />
+				</div>
+				<div className="mt-3 flex items-center gap-2">
+					<button
+						type="submit"
+						disabled={saving || !name.trim()}
+						className="cursor-pointer rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+					>
+						{saving ? 'Saving…' : 'Save'}
+					</button>
+					<button
+						type="button"
+						onClick={() => setEditing(false)}
+						className="cursor-pointer rounded-md px-3 py-1.5 text-sm text-[var(--text)] transition-colors hover:text-[var(--text-h)]"
+					>
+						Cancel
+					</button>
+				</div>
+			</form>
+				</div>
+			</div>
+
 			{updates !== null && (
 				<ul className="mt-3 flex flex-col gap-1 border-t border-[var(--border)] pt-3">
 					{updates.map((update) => (
@@ -332,7 +358,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 	);
 }
 
-function PencilIcon() {
+function ChevronIcon() {
 	return (
 		<svg
 			width="16"
@@ -343,8 +369,7 @@ function PencilIcon() {
 			strokeWidth="2"
 			aria-hidden="true"
 		>
-			<path d="M12 20h9" />
-			<path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+			<path d="m6 9 6 6 6-6" />
 		</svg>
 	);
 }

@@ -74,8 +74,10 @@ export default function MailboxForm({ account, onSave, onSaved, onClear, onClear
 
 	const storedHere = account?.source === 'database';
 	const fromEnvironment = account?.source === 'environment';
-	// A first save has nothing stored to fall back on, so the password is required.
-	const needsPassword = !account?.has_password && !password;
+	// Only a database-backed account can preserve an omitted password. Environment
+	// credentials cannot be copied through the API, so creating the database
+	// override requires the user to enter its app password once.
+	const needsPassword = account?.source !== 'database' && !password;
 
 	return (
 		<section>
@@ -152,13 +154,15 @@ export default function MailboxForm({ account, onSave, onSaved, onClear, onClear
 						disabled={saving}
 						onChange={(event) => setPassword(event.target.value)}
 						autoComplete="new-password"
-						placeholder={account?.has_password ? 'Unchanged' : 'App password'}
+						placeholder={storedHere ? 'Unchanged' : 'App password'}
 						className={`${inputClass} mt-1`}
 					/>
 					<p className="mt-1 text-xs text-[var(--text)]">
-						{account?.has_password
+						{storedHere
 							? 'A password is stored. Leave this blank to keep it.'
-							: 'For Gmail this must be an app password, not your account password.'}
+							: fromEnvironment
+								? 'Enter the app password to copy these settings into Artracker.'
+								: 'For Gmail this must be an app password, not your account password.'}
 					</p>
 				</div>
 

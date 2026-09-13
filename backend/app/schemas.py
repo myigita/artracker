@@ -134,8 +134,8 @@ class PlatformIn(BaseModel):
     model_config = _STRICT
 
     name: Name
-    # A convenience, not a matching rule: a tracker created on this platform gets
-    # a starting "sender contains <domain>" rule so you don't have to look it up.
+    # A UI hint that this platform supports notification mail. Shared platform
+    # domains are deliberately not installed as tracker rules.
     mail_domain: Name | None = None
 
 class PlatformOut(BaseModel):
@@ -160,7 +160,8 @@ class TrackerIn(BaseModel):
     # page; both is the useful case, so neither is required on its own.
     url: BlankableUrl | None = None
     description: Description | None = None
-    # Omitted falls back to the platform's mail_domain, if it has one.
+    # Omitted means no rules. A platform domain is shared by every artist on that
+    # platform, so using it as an automatic tracker rule creates false positives.
     rules: list[MatchRuleIn] | None = Field(default=None, max_length=25)
 
 class TrackerUpdate(BaseModel):
@@ -171,9 +172,9 @@ class TrackerUpdate(BaseModel):
     # the tracker still has rules to work from.
     url: BlankableUrl | None = None
     description: Description | None = None
-    # Replaced wholesale, like handles were. An omitted key leaves the rules
-    # alone; [] clears them, which the route refuses when there is no URL to fall
-    # back on — that would leave a tracker that does nothing at all.
+    # Replaced wholesale. An omitted key leaves the rules alone; [] clears them,
+    # which the route refuses when there is no URL to fall back on. Any non-empty
+    # set also needs a positive rule; negatives only narrow a positive match.
     rules: list[MatchRuleIn] | None = Field(default=None, max_length=25)
     # Writable so the UI can undo an accidental check. null is a real value
     # here — it restores a tracker that had never been checked before.

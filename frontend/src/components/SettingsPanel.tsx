@@ -55,7 +55,12 @@ export default function SettingsPanel({ onPolled }: Props) {
 			// exact environment variables that are missing, and a 502 carries the
 			// mail server's own complaint. A generic message would hide both.
 			.catch((err) => setError(errorDetail(err) ?? 'Could not check the mailbox.'))
-			.finally(() => setPolling(false));
+			.finally(() => {
+				setPolling(false);
+				// Manual checks participate in the same schedule, so refresh the
+				// last-result and next-run text whether the attempt worked or failed.
+				getPollSchedule().then(setSchedule).catch(() => {});
+			});
 	}
 
 	function handleDismiss(id: number) {

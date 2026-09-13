@@ -77,8 +77,8 @@ export type TrackerIn = {
 	url: string,
 	description?: string,
 	name?: string,
-	// Omitted entirely means "use whatever the platform suggests" — a platform
-	// with a known mail domain seeds a starting rule. Sending [] means none.
+	// Omitted and [] both mean no rules. Platform domains are deliberately not
+	// defaults because one domain is shared by every artist on that platform.
 	rules?: MatchRuleIn[],
 };
 

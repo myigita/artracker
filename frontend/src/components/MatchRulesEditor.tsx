@@ -4,6 +4,7 @@ type Props = {
 	rules: MatchRuleIn[];
 	onChange: (rules: MatchRuleIn[]) => void;
 	disabled?: boolean;
+	valueHint?: string;
 };
 
 // Controlled rather than self-saving: rules are edited inside the tracker's edit
@@ -27,7 +28,7 @@ const selectClass =
 	'text-[var(--text-h)] outline-none transition-colors focus:border-[var(--accent-border)] ' +
 	'disabled:opacity-40';
 
-export default function MatchRulesEditor({ rules, onChange, disabled }: Props) {
+export default function MatchRulesEditor({ rules, onChange, disabled, valueHint }: Props) {
 	function update(index: number, patch: Partial<MatchRuleIn>) {
 		onChange(rules.map((rule, i) => (i === index ? { ...rule, ...patch } : rule)));
 	}
@@ -45,7 +46,7 @@ export default function MatchRulesEditor({ rules, onChange, disabled }: Props) {
 			<div className="flex items-baseline gap-2">
 				<span className="text-xs font-medium text-[var(--text)]">Match rules</span>
 				<span className="text-xs text-[var(--text)]">
-					Mail has to satisfy every rule to land here.
+					Mail has to satisfy every rule, including one positive match.
 				</span>
 			</div>
 
@@ -89,7 +90,7 @@ export default function MatchRulesEditor({ rules, onChange, disabled }: Props) {
 							value={rule.value}
 							disabled={disabled}
 							onChange={(e) => update(index, { value: e.target.value })}
-							placeholder={rule.field === 'sender' ? 'creator.patreon.com' : 'peargor'}
+							placeholder={valueHint || (rule.field === 'sender' ? 'artist handle' : 'artist name')}
 							aria-label={`Rule ${index + 1} value`}
 							className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-transparent px-2 py-1.5 text-xs text-[var(--text-h)] outline-none transition-colors focus:border-[var(--accent-border)] disabled:opacity-40"
 						/>

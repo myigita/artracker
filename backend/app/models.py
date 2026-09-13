@@ -9,9 +9,9 @@ def utcnow() -> datetime:
 # the Platform model can consult it without importing the module that imports it
 # — database.py already depends on this one.
 #
-# The sender domain is a fact about the platform, not a preference; nobody should
-# have to look up "creator.patreon.com" by hand. It no longer drives matching —
-# it seeds a starting match rule when a tracker is created on the platform.
+# The sender domain is a fact about the platform, not a preference. It tells the
+# UI that a platform supports mail and supplies a useful hint, but it is too broad
+# to be a tracker rule: every Patreon artist shares creator.patreon.com.
 PREDEFINED_PLATFORMS: list[tuple[str, str]] = [
 	("Patreon - Mail", "creator.patreon.com"),
 ]
@@ -56,9 +56,9 @@ class Platform(Base):
 	trackers: Mapped[list["Tracker"]] = relationship(back_populates="platform")
 
 	# The sender domain of this platform's notification email, e.g.
-	# "creator.patreon.com". No longer used for matching — it is a convenience that
-	# seeds a first match rule when a tracker is created here, so you don't have to
-	# look the domain up. Null means the platform has no known notification mail.
+	# "creator.patreon.com". It is a UI hint, not a matching rule: a domain identifies
+	# the platform but cannot identify which artist a tracker belongs to. Null means
+	# the platform has no known notification mail.
 	mail_domain: Mapped[str | None] = mapped_column(String(255), unique=True)
 
 	# Seeded platforms are refused deletion. Deleting one used to "work" and then
@@ -212,7 +212,8 @@ class PollSchedule(Base):
 	`last_run_at` is what makes the schedule survive a restart: the loop asks
 	whether a run is *due* rather than sleeping for the interval, so changing the
 	interval takes effect on the next tick instead of after the current sleep, and
-	a restart doesn't reset the clock.
+	a restart doesn't reset the clock. `last_uid` and `uid_validity` independently
+	remember which mailbox messages were committed, so read status is irrelevant.
 	"""
 	__tablename__ = "poll_schedule"
 
@@ -225,6 +226,12 @@ class PollSchedule(Base):
 	# A one-line summary of the last pass, or the error it failed with. Without it
 	# a background poller is completely opaque — there is no request to watch fail.
 	last_result: Mapped[str] = mapped_column(String(500), nullable=True)
+	# IMAP UIDs are mailbox-local, monotonically increasing identifiers. Keeping the
+	# last committed one makes polling independent of the message's read/unread flag.
+	# UIDVALIDITY identifies the UID namespace; when it changes, the cursor is reset
+	# and Message-ID de-duplication safely absorbs anything fetched again.
+	last_uid: Mapped[int | None] = mapped_column(nullable=True)
+	uid_validity: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 class UnmatchedMail(Base):
 	"""Mail that looked like a notification but resolved to no tracker.

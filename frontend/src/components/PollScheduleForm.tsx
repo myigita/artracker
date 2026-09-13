@@ -31,12 +31,19 @@ export default function PollScheduleForm({ schedule, onSaved }: Props) {
 		setIntervalMinutes(schedule.interval_minutes);
 	}, [schedule]);
 
-	function save(next: { enabled: boolean; interval_minutes: number }) {
+	function save(
+		next: { enabled: boolean; interval_minutes: number },
+		previous: { enabled: boolean; interval_minutes: number },
+	) {
 		setSaving(true);
 		setError(null);
 		setPollSchedule(next)
 			.then(onSaved)
-			.catch((err) => setError(errorDetail(err) ?? 'Could not save the schedule.'))
+			.catch((err) => {
+				setEnabled(previous.enabled);
+				setIntervalMinutes(previous.interval_minutes);
+				setError(errorDetail(err) ?? 'Could not save the schedule.');
+			})
 			.finally(() => setSaving(false));
 	}
 
@@ -57,8 +64,12 @@ export default function PollScheduleForm({ schedule, onSaved }: Props) {
 						onChange={(event) => {
 							// Saved immediately rather than behind a button: it's one
 							// switch, and a toggle that needs confirming reads as broken.
-							setEnabled(event.target.checked);
-							save({ enabled: event.target.checked, interval_minutes: interval });
+							const next = event.target.checked;
+							setEnabled(next);
+							save(
+								{ enabled: next, interval_minutes: interval },
+								{ enabled, interval_minutes: interval },
+							);
 						}}
 						className="size-4 cursor-pointer accent-[var(--accent)]"
 					/>
@@ -73,7 +84,10 @@ export default function PollScheduleForm({ schedule, onSaved }: Props) {
 						onChange={(event) => {
 							const next = Number(event.target.value);
 							setIntervalMinutes(next);
-							save({ enabled, interval_minutes: next });
+							save(
+								{ enabled, interval_minutes: next },
+								{ enabled, interval_minutes: interval },
+							);
 						}}
 						aria-label="How often to check"
 						className="cursor-pointer rounded-md border border-[var(--border)] bg-transparent px-2 py-1 text-sm text-[var(--text-h)] outline-none transition-colors focus:border-[var(--accent-border)] disabled:opacity-40"
@@ -96,7 +110,9 @@ export default function PollScheduleForm({ schedule, onSaved }: Props) {
 
 			{schedule?.enabled && schedule.next_run_at && (
 				<p className="mt-1 text-xs text-[var(--text)]">
-					Next run around {new Date(schedule.next_run_at).toLocaleTimeString()}.
+					{new Date(schedule.next_run_at).getTime() <= Date.now() + 60_000
+						? 'Next run due now.'
+						: `Next run around ${new Date(schedule.next_run_at).toLocaleTimeString()}.`}
 				</p>
 			)}
 

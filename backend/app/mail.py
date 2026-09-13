@@ -16,9 +16,9 @@ Anything no tracker claims is written to `unmatched_mail` rather than dropped,
 because a poller that silently discards what it can't match is
 indistinguishable from a platform that went quiet.
 
-Splitting `fetch_unseen` (talks IMAP) from `record_message` (pure database work)
-is deliberate: the matching logic is the part with the bugs in it, and it is
-testable without a mail server anywhere in sight.
+Splitting `fetch_new` (talks IMAP) from `record_message` (pure database work) is
+deliberate: the matching logic is the part with the bugs in it, and it is testable
+without a mail server anywhere in sight.
 """
 import asyncio
 import email
@@ -95,6 +95,18 @@ class IncomingMail:
 	received_at: datetime  # naive UTC, like everything else in the DB
 
 
+@dataclass(frozen=True)
+class MailBatch:
+	"""Messages fetched after the saved IMAP cursor, plus the next cursor.
+
+	The cursor is committed in the same transaction as the resulting updates. A
+	message being read in Gmail is unrelated to whether Artracker has processed it.
+	"""
+	messages: list[IncomingMail]
+	uid_validity: str | None
+	highest_uid: int | None
+
+
 def _decode(value: str | None) -> str:
 	"""RFC 2047 header decoding.
 
@@ -151,41 +163,72 @@ def parse_message(raw: bytes) -> IncomingMail | None:
 	)
 
 
-def fetch_unseen(config: MailConfig) -> list[IncomingMail]:
-	"""Every unread message in the mailbox, parsed.
+def fetch_new(
+	config: MailConfig,
+	last_uid: int | None = None,
+	uid_validity: str | None = None,
+) -> MailBatch:
+	"""Every message after the saved IMAP UID, without changing its read state.
 
-	Fetching with RFC822 marks messages \\Seen as a side effect, which is what
-	stops the next poll re-reading them. The window that opens: if the process
-	dies between the fetch and the database commit, those messages are marked read
-	but never recorded, and are missed. Peeking instead and marking afterwards
-	would close it, at the cost of holding the IMAP connection across the write.
-	Not worth it here — the failure costs a missed badge, not data.
+	UIDs belong to a UIDVALIDITY namespace. If the server changes that namespace,
+	the saved cursor is discarded and the mailbox is scanned again; Message-ID
+	de-duplication makes that safe. Searching all UIDs is cheap — only headers for
+	new UIDs are fetched — and avoids treating Gmail's read flag as a work queue.
 	"""
 	messages: list[IncomingMail] = []
+	current_validity: str | None = None
+	highest_uid: int | None = None
 
 	try:
 		with imaplib.IMAP4_SSL(config.host, config.port) as imap:
 			imap.login(config.user, config.password)
-			imap.select(config.mailbox)
+			status, _ = imap.select(config.mailbox)
+			if status != "OK":
+				raise MailError(f"Could not select mailbox '{config.mailbox}'")
 
-			status, data = imap.search(None, "UNSEEN")
+			_, validity_data = imap.response("UIDVALIDITY")
+			if validity_data and validity_data[0] is not None:
+				raw_validity = validity_data[0]
+				current_validity = (
+					raw_validity.decode("ascii", errors="replace")
+					if isinstance(raw_validity, bytes)
+					else str(raw_validity)
+				)
+
+			# A changed UIDVALIDITY means the same integer now names a different
+			# message. Start over rather than skipping mail in the new namespace.
+			cursor = last_uid or 0
+			if uid_validity != current_validity:
+				cursor = 0
+
+			status, data = imap.uid("search", None, "ALL")
 			if status != "OK" or not data or not data[0]:
-				return messages
+				if status != "OK":
+					raise MailError("Could not search the mailbox")
+				return MailBatch(messages, current_validity, None)
 
-			for number in data[0].split():
-				status, payload = imap.fetch(number, "(RFC822)")
+			uids = sorted(int(value) for value in data[0].split())
+			new_uids = [uid for uid in uids if uid > cursor]
+			highest_uid = max(new_uids, default=None)
+
+			for uid in new_uids:
+				status, payload = imap.uid(
+					"fetch",
+					str(uid),
+					"(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])",
+				)
 				if status != "OK" or not payload:
-					continue
+					raise MailError(f"Could not fetch message UID {uid}")
 				for part in payload:
 					# imaplib returns a mix of tuples (the body) and bare bytes
 					# (the flag echoes); only the tuples carry a message.
 					if isinstance(part, tuple) and len(part) > 1:
 						if parsed := parse_message(part[1]):
 							messages.append(parsed)
-	except (imaplib.IMAP4.error, OSError) as error:
+	except (imaplib.IMAP4.error, OSError, ValueError) as error:
 		raise MailError(str(error)) from error
 
-	return messages
+	return MailBatch(messages, current_validity, highest_uid)
 
 
 def resolve_mail_config(db: Session) -> MailConfig | None:
@@ -226,7 +269,7 @@ def get_mail_fetcher():
 	every test of the matching logic would need a live IMAP server. Returns the
 	function rather than calling it, so the route decides when to connect.
 	"""
-	return fetch_unseen
+	return fetch_new
 
 
 @dataclass
@@ -278,13 +321,17 @@ def matching_trackers(db: Session, mail: IncomingMail) -> list[Tracker]:
 
 	**A tracker with no rules never matches.** `all([])` is True, so without the
 	`tracker.rules and` guard every rule-less tracker would claim every message
-	the moment mail started arriving.
+	the moment mail started arriving. A positive rule is also required here, not
+	just at the API boundary, so a legacy negative-only tracker cannot claim nearly
+	every message in the gathering mailbox.
 	"""
 	trackers = db.query(Tracker).options(selectinload(Tracker.rules)).all()
 	return [
 		tracker
 		for tracker in trackers
-		if tracker.rules and all(rule_matches(rule, mail) for rule in tracker.rules)
+		if tracker.rules
+		and any(rule.operator in ("contains", "equals") for rule in tracker.rules)
+		and all(rule_matches(rule, mail) for rule in tracker.rules)
 	]
 
 
@@ -340,7 +387,7 @@ def record_message(db: Session, mail: IncomingMail, seen: set[str]) -> str:
 
 
 def record_messages(db: Session, messages: list[IncomingMail]) -> PollOutcome:
-	"""Record a batch. Commits once, so a bad message can't half-apply a pass."""
+	"""Stage a batch in the current transaction."""
 	outcome = PollOutcome()
 	seen: set[str] = set()
 
@@ -353,7 +400,19 @@ def record_messages(db: Session, messages: list[IncomingMail]) -> PollOutcome:
 		else:
 			outcome.unmatched += 1
 
-	db.commit()
+	return outcome
+
+
+def record_batch(db: Session, schedule: PollSchedule, batch: MailBatch) -> PollOutcome:
+	"""Stage messages and their IMAP cursor in the current transaction."""
+	outcome = record_messages(db, batch.messages)
+
+	if schedule.uid_validity != batch.uid_validity:
+		schedule.last_uid = None
+	schedule.uid_validity = batch.uid_validity
+	if batch.highest_uid is not None:
+		schedule.last_uid = batch.highest_uid
+
 	return outcome
 
 
@@ -373,7 +432,7 @@ MIN_INTERVAL_MINUTES = 5
 logger = logging.getLogger(__name__)
 
 
-def run_one_poll(db: Session) -> str:
+def run_one_poll(db: Session, schedule: PollSchedule) -> str:
 	"""One pass, returning the one-line summary stored on the schedule.
 
 	Synchronous and blocking — imaplib is — so callers on the event loop must run
@@ -383,10 +442,11 @@ def run_one_poll(db: Session) -> str:
 	if config is None:
 		return "No mailbox is configured"
 
-	messages = fetch_unseen(config)
-	outcome = record_messages(db, messages)
+	batch = fetch_new(config, schedule.last_uid, schedule.uid_validity)
+	outcome = record_batch(db, schedule, batch)
+	db.commit()
 	return (
-		f"{len(messages)} read, {outcome.recorded} recorded,"
+		f"{len(batch.messages)} read, {outcome.recorded} recorded,"
 		f" {outcome.duplicates} already seen, {outcome.unmatched} unmatched"
 	)
 
@@ -423,7 +483,7 @@ def poll_if_due(session_factory) -> str | None:
 		db.commit()
 
 		try:
-			result = run_one_poll(db)
+			result = run_one_poll(db, schedule)
 		except MailError as error:
 			result = f"Failed: {error}"
 		except Exception as error:  # noqa: BLE001 - see below

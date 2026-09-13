@@ -52,6 +52,16 @@ _MIGRATIONS: list[tuple[str, str, tuple[str, ...]]] = [
 			"CREATE UNIQUE INDEX IF NOT EXISTS ix_platforms_mail_domain ON platforms (mail_domain)",
 		),
 	),
+	(
+		"poll_schedule",
+		"last_uid",
+		("ALTER TABLE poll_schedule ADD COLUMN last_uid INTEGER",),
+	),
+	(
+		"poll_schedule",
+		"uid_validity",
+		("ALTER TABLE poll_schedule ADD COLUMN uid_validity VARCHAR(255)",),
+	),
 ]
 
 
@@ -73,33 +83,38 @@ def ensure_schema(bind) -> None:
 # without importing this module. Deleting a seeded platform is refused outright
 # — see delete_platform — rather than allowed and then silently undone here on
 # the next restart.
+def ensure_predefined_platforms(session: Session) -> None:
+	"""Stage any missing built-in platforms in an existing transaction."""
+	for name, mail_domain in PREDEFINED_PLATFORMS:
+		# If ANY row already holds this domain, there is nothing to do — and
+		# trying anyway is worse than useless. mail_domain is unique, this
+		# function runs at import time, and an IntegrityError here doesn't fail
+		# a request, it stops the app from starting at all. Found exactly that
+		# way: a database seeded by an earlier version already had the domain
+		# under a different name.
+		if session.query(Platform).filter(Platform.mail_domain == mail_domain).first():
+			continue
+
+		# Case-insensitive on purpose. Someone who typed "patreon - mail" by
+		# hand before this shipped would otherwise get a SECOND, near-identical
+		# platform next to it — two rows that look the same in a dropdown, only
+		# one of which actually reads mail. Matching loosely adopts theirs.
+		platform = (
+			session.query(Platform)
+			.filter(func.lower(Platform.name) == name.lower())
+			.first()
+		)
+		if platform is None:
+			session.add(Platform(name=name, mail_domain=mail_domain))
+		else:
+			# Reached only when the domain is unclaimed, so this can't be
+			# stealing it from anyone.
+			platform.mail_domain = mail_domain
+
+
 def seed_platforms(bind) -> None:
 	with Session(bind) as session:
-		for name, mail_domain in PREDEFINED_PLATFORMS:
-			# If ANY row already holds this domain, there is nothing to do — and
-			# trying anyway is worse than useless. mail_domain is unique, this
-			# function runs at import time, and an IntegrityError here doesn't fail
-			# a request, it stops the app from starting at all. Found exactly that
-			# way: a database seeded by an earlier version already had the domain
-			# under a different name.
-			if session.query(Platform).filter(Platform.mail_domain == mail_domain).first():
-				continue
-
-			# Case-insensitive on purpose. Someone who typed "patreon - mail" by
-			# hand before this shipped would otherwise get a SECOND, near-identical
-			# platform next to it — two rows that look the same in a dropdown, only
-			# one of which actually reads mail. Matching loosely adopts theirs.
-			platform = (
-				session.query(Platform)
-				.filter(func.lower(Platform.name) == name.lower())
-				.first()
-			)
-			if platform is None:
-				session.add(Platform(name=name, mail_domain=mail_domain))
-			else:
-				# Reached only when the domain is unclaimed, so this can't be
-				# stealing it from anyone.
-				platform.mail_domain = mail_domain
+		ensure_predefined_platforms(session)
 		session.commit()
 
 

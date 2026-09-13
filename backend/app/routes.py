@@ -2,13 +2,13 @@ from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException, Depends
 
-from .database import get_db
+from .database import ensure_predefined_platforms, get_db
 from .mail import (
 	MailError,
 	get_mail_config,
 	get_mail_fetcher,
 	mail_config_from_env,
-	record_messages,
+	record_batch,
 )
 from .models import (
 	Category,
@@ -97,16 +97,10 @@ def create_tracker(tracker_in: TrackerIn, db: Session = Depends(get_db)):
 
 	url = (tracker_in.url or "").strip()
 
-	rules_in = tracker_in.rules
-	if rules_in is None:
-		# Omitted, so fall back to whatever the platform knows. A mail platform
-		# then yields a working starting rule instead of a tracker that catches
-		# nothing, and it saves looking the domain up by hand.
-		rules_in = (
-			[MatchRuleIn(field="sender", operator="contains", value=platform.mail_domain)]
-			if platform.mail_domain
-			else []
-		)
+	# A platform domain is shared by all its artists. Treating it as a default rule
+	# makes every notification on that platform land on every tracker, so omitted
+	# rules now mean exactly what they say: no rules.
+	rules_in = tracker_in.rules or []
 
 	name = tracker_in.name if tracker_in.name else f"{tracker_in.subject_name} ({tracker_in.platform_name})"
 
@@ -266,6 +260,14 @@ def _require_url_or_rules(url: str, rules: list, name: str) -> None:
 		raise HTTPException(
 			status_code=400,
 			detail=f"'{name}' needs a URL or at least one match rule",
+		)
+
+	# Negative rules can only narrow a positive match. On their own, a rule such as
+	# "subject doesn't contain digest" accepts almost every message in the mailbox.
+	if rules and not any(rule.operator in ("contains", "equals") for rule in rules):
+		raise HTTPException(
+			status_code=400,
+			detail=f"'{name}' needs at least one positive contains or equals rule",
 		)
 
 
@@ -520,6 +522,15 @@ def import_backup(
 		db.add(platforms[item.name])
 		added["platforms"] += 1
 
+	if mode is ImportMode.replace:
+		# Replace mode can accept old version-1 backups from before Patreon Mail was
+		# built in. Restore the app's built-ins inside the same transaction so a
+		# successful import cannot leave them missing until the next restart.
+		db.flush()
+		ensure_predefined_platforms(db)
+		db.flush()
+		platforms = {p.name: p for p in db.query(Platform).all()}
+
 	for item in payload.subjects:
 		if item.name in subjects:
 			skipped += 1
@@ -591,6 +602,7 @@ def poll_mail(
 	config=Depends(get_mail_config),
 	fetcher=Depends(get_mail_fetcher),
 ):
+	schedule = _schedule(db)
 	# 503 rather than 500: nothing is broken, the feature simply hasn't been set
 	# up, and the message says exactly which variables are missing.
 	if config is None:
@@ -603,16 +615,25 @@ def poll_mail(
 		)
 
 	try:
-		messages = fetcher(config)
+		batch = fetcher(config, schedule.last_uid, schedule.uid_validity)
 	except MailError as error:
+		schedule.last_run_at = utcnow()
+		schedule.last_result = f"Failed: {error}"[:500]
+		db.commit()
 		# 502: the app is fine, the upstream mailbox isn't.
 		raise HTTPException(
 			status_code=502, detail=f"Could not read the mailbox: {error}"
 		) from error
 
-	outcome = record_messages(db, messages)
+	outcome = record_batch(db, schedule, batch)
+	schedule.last_run_at = utcnow()
+	schedule.last_result = (
+		f"{len(batch.messages)} read, {outcome.recorded} recorded, "
+		f"{outcome.duplicates} already seen, {outcome.unmatched} unmatched"
+	)[:500]
+	db.commit()
 	return PollResult(
-		fetched=len(messages),
+		fetched=len(batch.messages),
 		recorded=outcome.recorded,
 		duplicates=outcome.duplicates,
 		unmatched=outcome.unmatched,
@@ -639,6 +660,14 @@ def dismiss_unmatched_mail(unmatched_id: int, db: Session = Depends(get_db)):
 # no row exists, so containers configured the old way keep working.
 def _mail_account(db: Session) -> MailAccount | None:
 	return db.query(MailAccount).first()
+
+
+def _reset_mail_cursor(db: Session) -> None:
+	"""Forget mailbox-specific UID state without changing the schedule itself."""
+	schedule = db.query(PollSchedule).first()
+	if schedule:
+		schedule.last_uid = None
+		schedule.uid_validity = None
 
 @mail_router.get("/account", response_model=MailAccountOut)
 def get_mail_account(db: Session = Depends(get_db)):
@@ -674,6 +703,11 @@ def get_mail_account(db: Session = Depends(get_db)):
 @mail_router.put("/account", response_model=MailAccountOut)
 def set_mail_account(payload: MailAccountIn, db: Session = Depends(get_db)):
 	account = _mail_account(db)
+	old_identity = (
+		(account.host, account.port, account.username, account.mailbox or "INBOX")
+		if account
+		else None
+	)
 
 	if account is None:
 		# First save has to carry a password; there is nothing to fall back on.
@@ -693,6 +727,12 @@ def set_mail_account(payload: MailAccountIn, db: Session = Depends(get_db)):
 		account.password = payload.password
 	account.updated_at = utcnow()
 
+	new_identity = (account.host, account.port, account.username, account.mailbox or "INBOX")
+	if old_identity != new_identity:
+		# IMAP UIDs only have meaning inside one account and mailbox. Reusing the
+		# old cursor after changing either can skip the beginning of the new inbox.
+		_reset_mail_cursor(db)
+
 	db.commit()
 
 	return MailAccountOut(
@@ -711,8 +751,10 @@ def clear_mail_account(db: Session = Depends(get_db)):
 		raise HTTPException(status_code=404, detail="No mailbox is stored")
 
 	# Deleting the row falls back to the environment rather than disabling the
-	# feature outright, which is the point of keeping that path alive.
+	# feature outright, which is the point of keeping that path alive. The fallback
+	# is a different mailbox identity, so its UID cursor must start fresh.
 	db.delete(account)
+	_reset_mail_cursor(db)
 	db.commit()
 
 # The background poller's schedule. Stored rather than passed as an env var so it
@@ -736,8 +778,11 @@ def _schedule_out(schedule: PollSchedule) -> PollScheduleOut:
 	if schedule.enabled:
 		# From the last run, not from now, so reading the setting doesn't appear
 		# to push the next run further away.
-		base = schedule.last_run_at or utcnow()
-		next_run = base + timedelta(minutes=schedule.interval_minutes)
+		next_run = (
+			schedule.last_run_at + timedelta(minutes=schedule.interval_minutes)
+			if schedule.last_run_at
+			else utcnow()
+		)
 
 	return PollScheduleOut(
 		enabled=schedule.enabled,

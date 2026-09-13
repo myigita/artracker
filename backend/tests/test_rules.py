@@ -8,6 +8,7 @@ Here we only care that the rules themselves round-trip properly.
 
 SENDER_RULE = {"field": "sender", "operator": "contains", "value": "creator.patreon.com"}
 SUBJECT_RULE = {"field": "subject", "operator": "not_contains", "value": "digest"}
+POSITIVE_SUBJECT_RULE = {"field": "subject", "operator": "contains", "value": "peargor"}
 
 
 def make(client, subject, platform, **extra):
@@ -35,10 +36,17 @@ def test_patch_replaces_the_rules(client, subject, platform):
 	created = make(client, subject, platform, rules=[SENDER_RULE]).json()
 
 	body = client.patch(
-		f"/api/trackers/{created['id']}", json={"rules": [SUBJECT_RULE]}
+		f"/api/trackers/{created['id']}", json={"rules": [POSITIVE_SUBJECT_RULE]}
 	).json()
 
-	assert [r["value"] for r in body["rules"]] == ["digest"]
+	assert [r["value"] for r in body["rules"]] == ["peargor"]
+
+
+def test_negative_rules_cannot_match_without_a_positive_rule(client, subject, platform):
+	response = make(client, subject, platform, rules=[SUBJECT_RULE])
+
+	assert response.status_code == 400
+	assert "positive" in response.json()["detail"]
 
 
 def test_patch_without_rules_leaves_them_alone(client, subject, platform):

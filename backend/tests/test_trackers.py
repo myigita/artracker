@@ -429,12 +429,28 @@ def mail_platform(client):
 	).json()
 
 
-def test_a_platform_with_a_mail_domain_seeds_a_rule_and_needs_no_url(client, subject):
+def test_a_platform_domain_is_not_used_as_an_artist_rule(client, subject):
 	mail_platform(client)
 
 	response = client.post(
 		"/api/trackers/",
 		json={"subject_name": subject["name"], "platform_name": "Patreon - Mail"},
+	)
+
+	assert response.status_code == 400
+	assert "match rule" in response.json()["detail"]
+
+
+def test_a_mail_tracker_with_a_specific_rule_needs_no_url(client, subject):
+	mail_platform(client)
+
+	response = client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": "Patreon - Mail",
+			"rules": [{"field": "sender", "operator": "contains", "value": "denji"}],
+		},
 	)
 
 	assert response.status_code == 201
@@ -485,6 +501,7 @@ def test_the_url_can_be_cleared_when_rules_remain(client, subject):
 			"subject_name": subject["name"],
 			"platform_name": "Patreon - Mail",
 			"url": "https://patreon.com/peargor",
+			"rules": [{"field": "sender", "operator": "contains", "value": "peargor"}],
 		},
 	).json()
 
@@ -530,7 +547,11 @@ def test_the_default_name_uses_parentheses(client, subject):
 
 	body = client.post(
 		"/api/trackers/",
-		json={"subject_name": subject["name"], "platform_name": "Patreon - Mail"},
+		json={
+			"subject_name": subject["name"],
+			"platform_name": "Patreon - Mail",
+			"rules": [{"field": "sender", "operator": "contains", "value": "denji"}],
+		},
 	).json()
 
 	# Parentheses rather than a dash, so a platform whose own name contains a dash

@@ -2,15 +2,23 @@
 
 The IMAP half is swapped out via dependency_overrides, exactly the way get_db is
 — so everything here exercises the real matching logic without a mail server
-existing anywhere. `fetch_unseen` itself is the only untested part, and it is
-deliberately thin for that reason.
+existing anywhere. The IMAP adapter has a focused fake-server test to pin its UID
+cursor and BODY.PEEK behavior.
 """
 from datetime import datetime
 
 import pytest
 
-from app.mail import IncomingMail, MailConfig, get_mail_config, get_mail_fetcher, parse_message
-from app.models import utcnow
+from app.mail import (
+	IncomingMail,
+	MailBatch,
+	MailConfig,
+	fetch_new,
+	get_mail_config,
+	get_mail_fetcher,
+	parse_message,
+)
+from app.models import MatchRule, utcnow
 from app.main import app
 
 # Fixed timestamps rather than utcnow(): the badge compares detected_at against
@@ -27,7 +35,15 @@ def mailbox(client):
 	app.dependency_overrides[get_mail_config] = lambda: MailConfig(
 		host="imap.example.test", user="gather@example.test", password="secret"
 	)
-	app.dependency_overrides[get_mail_fetcher] = lambda: (lambda config: list(inbox))
+	def fetcher(config, last_uid=None, uid_validity=None):
+		start = last_uid if uid_validity == "test-mailbox" and last_uid else 0
+		return MailBatch(
+			messages=list(inbox[start:]),
+			uid_validity="test-mailbox",
+			highest_uid=len(inbox) or None,
+		)
+
+	app.dependency_overrides[get_mail_fetcher] = lambda: fetcher
 	try:
 		yield inbox
 	finally:
@@ -47,8 +63,7 @@ def message(sender, subject="August Character Poll", message_id=None, received_a
 def patreon(client):
 	"""A complete chain: platform with a known mail domain, subject, tracker.
 
-	The tracker sends no rules, so it inherits the platform's domain as a starting
-	"sender contains creator.patreon.com" rule.
+	The rule identifies the artist rather than merely the shared Patreon domain.
 	"""
 	client.post(
 		"/api/platforms/",
@@ -61,6 +76,9 @@ def patreon(client):
 			"subject_name": "Pear哥",
 			"platform_name": "Patreon - Mail",
 			"url": "https://patreon.com/peargor",
+			"rules": [
+				{"field": "sender", "operator": "contains", "value": "peargor"}
+			],
 		},
 	).json()
 
@@ -117,6 +135,43 @@ def test_message_without_a_usable_sender_is_unparseable():
 	assert parse_message(b"Subject: Hi\r\n\r\nbody\r\n") is None
 
 
+def test_imap_polling_uses_uids_and_does_not_depend_on_unread(monkeypatch):
+	"""Read mail still appears in UID SEARCH ALL, and BODY.PEEK does not mark it read."""
+	raw = (
+		b"From: peargor@creator.patreon.com\r\n"
+		b"Message-ID: <uid-test@example.test>\r\n"
+		b"Subject: New post\r\n\r\n"
+	)
+
+	class FakeImap:
+		calls = []
+
+		def __init__(self, host, port): pass
+		def __enter__(self): return self
+		def __exit__(self, *args): pass
+		def login(self, user, password): pass
+		def select(self, mailbox): return "OK", [b"2"]
+		def response(self, name): return name, [b"42"]
+
+		def uid(self, command, *args):
+			self.calls.append((command, *args))
+			if command == "search":
+				return "OK", [b"7 8"]
+			return "OK", [(b"8 FETCH", raw), b")"]
+
+	monkeypatch.setattr("app.mail.imaplib.IMAP4_SSL", FakeImap)
+	batch = fetch_new(
+		MailConfig("imap.example.test", "user", "password"),
+		last_uid=7,
+		uid_validity="42",
+	)
+
+	assert [mail.message_id for mail in batch.messages] == ["<uid-test@example.test>"]
+	assert batch.highest_uid == 8
+	assert ("search", None, "ALL") in FakeImap.calls
+	assert any("BODY.PEEK" in call[-1] for call in FakeImap.calls if call[0] == "fetch")
+
+
 # ---- matching --------------------------------------------------------------
 
 def test_poll_records_an_update(client, mailbox):
@@ -137,17 +192,16 @@ def test_matching_ignores_sender_case(client, mailbox):
 	assert client.post("/api/mail/poll").json()["recorded"] == 1
 
 
-def test_polling_twice_records_nothing_new(client, mailbox):
-	# The unique external_ref is what makes re-polling safe, which matters because
-	# fetch marks mail \Seen only after a successful pass.
+def test_polling_twice_fetches_nothing_past_the_saved_uid(client, mailbox):
 	patreon(client)
 	mailbox.append(message("peargor@creator.patreon.com"))
 	client.post("/api/mail/poll")
 
 	body = client.post("/api/mail/poll").json()
 
+	assert body["fetched"] == 0
 	assert body["recorded"] == 0
-	assert body["duplicates"] == 1
+	assert body["duplicates"] == 0
 
 
 def test_the_same_message_twice_in_one_batch_collides_with_itself(client, mailbox):
@@ -189,6 +243,33 @@ def test_a_tracker_with_no_rules_never_matches(client, mailbox, subject, platfor
 	mailbox.append(message("anyone@anywhere.test"))
 
 	assert client.post("/api/mail/poll").json()["recorded"] == 0
+
+
+def test_a_legacy_negative_only_tracker_never_matches(client, mailbox, subject, platform, db_session):
+	"""Rows created before API validation must also fail closed at match time."""
+	tracker = client.post(
+		"/api/trackers/",
+		json={
+			"subject_name": subject["name"],
+			"platform_name": platform["name"],
+			"url": "https://example.test/a",
+		},
+	).json()
+	db_session.add(
+		MatchRule(
+			tracker_id=tracker["id"],
+			field="subject",
+			operator="not_contains",
+			value="digest",
+		)
+	)
+	db_session.commit()
+	mailbox.append(message("anyone@anywhere.test", subject="New post"))
+
+	body = client.post("/api/mail/poll").json()
+
+	assert body["recorded"] == 0
+	assert body["unmatched"] == 1
 
 
 def test_all_of_a_trackers_rules_must_hold(client, mailbox, subject):
@@ -336,6 +417,7 @@ def test_deleting_a_tracker_takes_its_updates_with_it(client, mailbox):
 
 	client.delete(f"/api/trackers/{tracker['id']}")
 	rebuilt = patreon(client)
+	mailbox.append(message("peargor@creator.patreon.com", message_id="<keep@me>"))
 	body = client.post("/api/mail/poll").json()
 
 	assert body["recorded"] == 1
@@ -425,6 +507,33 @@ def test_editing_without_a_password_keeps_the_stored_one(client, db_session, no_
 	assert account.password == "hunter2"
 
 
+def test_changing_mailbox_identity_resets_the_uid_cursor(client, db_session, no_mail_env):
+	client.get("/api/mail/schedule")
+	schedule = db_session.query(PollSchedule).one()
+	schedule.last_uid = 812
+	schedule.uid_validity = "old-mailbox"
+	db_session.commit()
+
+	save_account(client)
+
+	db_session.refresh(schedule)
+	assert (schedule.last_uid, schedule.uid_validity) == (None, None)
+
+
+def test_changing_only_the_password_keeps_the_uid_cursor(client, db_session, no_mail_env):
+	save_account(client)
+	client.get("/api/mail/schedule")
+	schedule = db_session.query(PollSchedule).one()
+	schedule.last_uid = 812
+	schedule.uid_validity = "same-mailbox"
+	db_session.commit()
+
+	save_account(client, password="new-secret")
+
+	db_session.refresh(schedule)
+	assert (schedule.last_uid, schedule.uid_validity) == (812, "same-mailbox")
+
+
 def test_an_empty_password_is_rejected_rather_than_wiping(client, no_mail_env):
 	save_account(client)
 
@@ -462,6 +571,20 @@ def test_clearing_the_mailbox_falls_back_to_the_environment(client, db_session, 
 	assert client.delete("/api/mail/account").status_code == 204
 
 	assert resolve_mail_config(db_session).host == "env.example.test"
+
+
+def test_clearing_the_mailbox_resets_the_uid_cursor(client, db_session, no_mail_env):
+	save_account(client)
+	client.get("/api/mail/schedule")
+	schedule = db_session.query(PollSchedule).one()
+	schedule.last_uid = 812
+	schedule.uid_validity = "stored-mailbox"
+	db_session.commit()
+
+	client.delete("/api/mail/account")
+
+	db_session.refresh(schedule)
+	assert (schedule.last_uid, schedule.uid_validity) == (None, None)
 
 
 def test_clearing_a_mailbox_that_was_never_set_404s(client, no_mail_env):
@@ -506,6 +629,20 @@ def test_the_schedule_can_be_turned_on(client):
 	assert body["enabled"] is True
 	assert body["interval_minutes"] == 30
 	assert body["next_run_at"] is not None
+	assert datetime.fromisoformat(body["next_run_at"]).replace(tzinfo=None) <= utcnow()
+
+
+def test_a_manual_poll_updates_the_schedule(client, mailbox, db_session):
+	patreon(client)
+	mailbox.append(message("peargor@creator.patreon.com"))
+
+	client.post("/api/mail/poll")
+	body = client.get("/api/mail/schedule").json()
+
+	assert body["last_run_at"] is not None
+	assert "1 read" in body["last_result"]
+	schedule = db_session.query(PollSchedule).one()
+	assert (schedule.last_uid, schedule.uid_validity) == (1, "test-mailbox")
 
 
 def test_an_interval_under_five_minutes_is_rejected(client):
@@ -576,7 +713,7 @@ def test_a_failing_poll_is_recorded_rather_than_raised(client, db_session, monke
 	import app.mail as mail_module
 
 	monkeypatch.setattr(
-		mail_module, "run_one_poll", lambda db: (_ for _ in ()).throw(RuntimeError("boom"))
+		mail_module, "run_one_poll", lambda db, schedule: (_ for _ in ()).throw(RuntimeError("boom"))
 	)
 	client.put("/api/mail/schedule", json={"enabled": True, "interval_minutes": 5})
 

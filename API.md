@@ -152,7 +152,7 @@ already tracked before deciding what to add.
   "name": "optional, defaults to \"Subject (Platform)\"",
   "description": "optional",
   "rules": [
-    { "field": "sender", "operator": "contains", "value": "creator.patreon.com" }
+    { "field": "sender", "operator": "contains", "value": "peargor" }
   ]
 }
 ```
@@ -161,9 +161,8 @@ already tracked before deciding what to add.
 > URL only is a manual bookmark. Rules only is an artist watched purely through
 > notification mail, with no page to open. Both is the useful case.
 >
-> **Omitting `rules` entirely is not the same as sending `[]`.** Omitted falls
-> back to the platform's `mail_domain` if it has one, producing a starting
-> `sender contains <domain>` rule. `[]` means no rules at all.
+> Omitted `rules` and `[]` both mean no rules. A platform domain is shared by
+> every artist there, so it is never installed as an automatic tracker rule.
 
 > **No auto-create.** If the subject or platform doesn't already exist this
 > returns **400**, it does not create them. Create them first (treating 409 as
@@ -226,6 +225,10 @@ Matching is case-insensitive on both sides. `sender` is the bare address with th
 display name stripped, so `Pear哥 <peargor@creator.patreon.com>` matches a rule
 against `peargor@creator.patreon.com` but not one against `Pear哥`.
 
+Every non-empty rule set needs at least one positive `contains` or `equals` rule.
+`not_contains` and `not_equals` only narrow that positive match; alone they would
+accept nearly every unrelated message in the mailbox.
+
 **A tracker with no rules never matches anything**, deliberately — otherwise every
 rule-less tracker would claim every message. One message *can* land on several
 trackers, and records an update on each.
@@ -286,10 +289,9 @@ Platforms take one extra optional field:
 POST /api/platforms/  { "name": "Patreon - Mail", "mail_domain": "creator.patreon.com" }
 ```
 
-`mail_domain` is a convenience, not a matching rule — a tracker created on this
-platform inherits a starting `sender contains <domain>` rule so you don't have to
-look the domain up. It is unique across platforms, and 409s if another already
-claims it.
+`mail_domain` tells the UI that the platform supports notification mail and gives
+it a useful hint. It is not installed as a rule because the same domain is shared
+by every artist. It is unique across platforms, and 409s if another claims it.
 
 Platform responses also carry **`is_preset`**. The app seeds a small set of known
 platforms at startup and **refuses to delete them (409)** — deleting would appear
@@ -319,6 +321,10 @@ records an update on every tracker whose rules the message satisfies.
 
 Safe to call as often as you like: each recorded update is keyed by the message's
 `Message-ID` scoped to its tracker, so re-reading the same mail records nothing new.
+The poller also saves the mailbox's IMAP UID cursor and fetches headers with
+`BODY.PEEK`, so opening a message in Gmail neither hides it from Artracker nor has
+its read state changed by Artracker. The cursor advances only with the database
+transaction that records the batch.
 
 **Unmatched mail is a diagnostic, not a queue.** Sender addresses and subject
 formats change without notice, and a poller that silently dropped what it couldn't
@@ -337,9 +343,10 @@ PUT   ← { "host": "…", "port": 993, "username": "…", "password": "…", "m
   document. `has_password` is all you get. Every endpoint here is unauthenticated,
   so a password on a response model is a password served to anyone who can reach
   the app.
-- **Omit `password` on `PUT` to keep the stored one.** That is what lets the host
-  be edited without retyping it. An empty string is rejected rather than treated
-  as a clear.
+- **Omit `password` on `PUT` to keep a database-stored password.** Environment
+  credentials cannot be copied through the API, so the first save from
+  `source: "environment"` must include the app password again. An empty string is
+  rejected rather than treated as a clear.
 - `source` is `database`, `environment` or `unset`. A stored account wins over the
   `ARTRACKER_MAIL_*` environment variables; those remain as a fallback, so
   `DELETE` degrades to them rather than switching the feature off.
@@ -359,7 +366,8 @@ PUT ← { "enabled": true, "interval_minutes": 30 }
 - `last_result` is a one-line summary of the last pass, or the error it failed
   with — a background poller has no request to watch fail, so it is the only
   feedback there is.
-- `next_run_at` is computed from `last_run_at`, not from when you asked.
+- A schedule that has never run is due immediately. Afterwards `next_run_at` is
+  computed from `last_run_at`. Manual checks update the same last/next-run state.
 
 ### Backup
 
@@ -372,6 +380,8 @@ The document carries match rules and platform mail domains, since both are
 configuration. It does **not** carry detected updates, unmatched mail, or the
 mailbox password — the first two are re-derivable signals rather than settings,
 and the third has no business in a file you download and pass around.
+Replace imports also restore any missing built-in platforms, so a version-1 backup
+from before Patreon Mail existed cannot leave the preset missing.
 
 ---
 
