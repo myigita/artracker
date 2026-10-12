@@ -73,7 +73,7 @@ export default function MailboxForm({ account, onSave, onSaved, onClear, onClear
 
 	return (
 		<section>
-			<h2 className="font-semibold text-[var(--text-h)]">Mailbox</h2>
+			<h3 className="font-semibold text-[var(--text-h)]">Mailbox</h3>
 			<p className="mt-1 text-sm text-[var(--text)]">
 				The gathering account that platform notifications are forwarded to. Use a
 				dedicated mailbox that receives nothing else — an app password grants full

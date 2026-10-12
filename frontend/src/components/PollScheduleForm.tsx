@@ -46,7 +46,7 @@ export default function PollScheduleForm({ schedule, onSaved }: Props) {
 
 	return (
 		<section>
-			<h2 className="font-semibold text-[var(--text-h)]">Automatic checks</h2>
+			<h3 className="font-semibold text-[var(--text-h)]">Automatic checks</h3>
 			<p className="mt-1 text-sm text-[var(--text)]">
 				Reads the mailbox on a timer, so updates appear without you pressing
 				anything. Runs inside the app — nothing to set up on the host.
