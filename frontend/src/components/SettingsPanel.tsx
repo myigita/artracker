@@ -153,10 +153,10 @@ export default function SettingsPanel({ onPolled }: Props) {
 										className="rounded-lg border border-[var(--border)] px-4 py-3"
 									>
 										<div className="flex items-baseline gap-3">
-											<span className="truncate font-medium text-[var(--text-h)]">
+											<span className="min-w-0 flex-1 truncate font-medium text-[var(--text-h)]">
 												{item.subject || '(no subject)'}
 											</span>
-											<span className="ml-auto shrink-0 text-xs text-[var(--text)]">
+											<span className="hidden shrink-0 text-xs text-[var(--text)] sm:inline">
 												{new Date(item.received_at).toLocaleString()}
 											</span>
 											<button
@@ -178,7 +178,10 @@ export default function SettingsPanel({ onPolled }: Props) {
 												</svg>
 											</button>
 										</div>
-										<p className="mt-1 truncate text-xs text-[var(--text)]">{item.sender}</p>
+										<p className="mt-1 flex flex-wrap gap-x-1 text-xs text-[var(--text)]">
+											<span className="min-w-0 truncate">{item.sender}</span>
+											<span className="sm:hidden">· {new Date(item.received_at).toLocaleString()}</span>
+										</p>
 										<p className="mt-1 text-xs text-[var(--text)]">{item.reason}</p>
 									</div>
 								))}
