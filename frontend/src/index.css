@@ -10,6 +10,12 @@
   --accent-border: rgba(170, 59, 255, 0.5);
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  /* currentColor in `color` means "inherit", so the logo is plain unless a theme colours it. */
+  --logo-1: currentColor;
+  --logo-2: currentColor;
+  --logo-3: currentColor;
+  --logo-4: currentColor;
+  --logo-5: currentColor;
 
   /* Locally installed fonts only; no web font request. */
   --sans:
@@ -32,8 +38,9 @@
   }
 }
 
+/* No data-theme means "follow the OS"; the inline script in index.html sets it before first paint. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --text: #9ca3af;
     --text-h: #f3f4f6;
     --bg: #16171d;
@@ -44,6 +51,40 @@
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
   }
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --text: #9ca3af;
+  --text-h: #f3f4f6;
+  --bg: #16171d;
+  --border: #2e303a;
+  --accent: #c084fc;
+  --accent-bg: rgba(192, 132, 252, 0.15);
+  --accent-border: rgba(192, 132, 252, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  color-scheme: dark;
+}
+
+:root[data-theme='bauhaus'] {
+  --text: #57514a;
+  --text-h: #1d1b18;
+  --bg: #f2ead7;
+  --border: #d8ccb0;
+  --accent: #b83418;
+  --accent-bg: #efcba8;
+  --accent-border: #e8833a;
+  --logo-1: #c8361b;
+  --logo-2: #e07a2a;
+  --logo-3: #d9a01a;
+  --logo-4: #4f8a3c;
+  --logo-5: #235f8c;
+  --shadow: #1d1b18 3px 3px 0 0;
+  color-scheme: light;
 }
 
 body {

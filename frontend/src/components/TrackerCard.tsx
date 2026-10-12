@@ -156,8 +156,11 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 
 	return (
 		<div onClick={handleCardClick} className="group/card cursor-pointer rounded-lg border border-[var(--border)] p-4 shadow-sm transition-colors hover:border-[var(--accent-border)]">
-			<div className="flex items-center gap-2">
-				<h3 className="truncate font-semibold text-[var(--text-h)]">{tracker.name}</h3>
+			<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+				<h3 className="min-w-0 basis-full break-words font-semibold text-[var(--text-h)] sm:basis-auto">
+					{tracker.name}
+				</h3>
+				<div className="flex items-center gap-2">
 				{tracker.unread_count > 0 && (
 					<button
 						type="button"
@@ -199,21 +202,19 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 						<CheckIcon />
 					</button>
 				)}
+				</div>
+				<div className="ml-auto flex shrink-0 items-center gap-2">
 				{tracker.rules.length > 0 && (
 					<span
 						title={tracker.rules
 							.map((r) => `${r.field} ${r.operator.replace('_', ' ')} “${r.value}”`)
 							.join('\n')}
-						className="ml-auto shrink-0 text-xs text-[var(--text)]"
+						className="shrink-0 text-xs text-[var(--text)]"
 					>
 						{tracker.rules.length === 1 ? '1 rule' : `${tracker.rules.length} rules`}
 					</span>
 				)}
-				<span
-					className={`shrink-0 text-xs text-[var(--text)] ${
-						tracker.rules.length > 0 ? '' : 'ml-auto'
-					}`}
-				>
+				<span className="shrink-0 text-xs text-[var(--text)]">
 					{timeAgo(tracker.last_checked)}
 				</span>
 				{undo && (
@@ -246,6 +247,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 				>
 					<span className={`flex transition-transform duration-200 motion-reduce:transition-none ${editing ? 'rotate-180' : ''}`}><ChevronIcon /></span>
 				</button>
+				</div>
 			</div>
 			<div
 				id={`tracker-editor-${tracker.id}`}
