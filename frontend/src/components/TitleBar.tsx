@@ -21,6 +21,7 @@ export default function TitleBar<T extends string>({
 	const slotRef = useRef<HTMLDivElement>(null);
 	const measureRef = useRef<HTMLDivElement>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
+	const triggerRef = useRef<HTMLButtonElement>(null);
 	const [collapsed, setCollapsed] = useState(false);
 	const [menuOpen, setMenuOpen] = useState(false);
 
@@ -48,7 +49,10 @@ export default function TitleBar<T extends string>({
 			if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
 		};
 		const onKey = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') setMenuOpen(false);
+			if (event.key === 'Escape') {
+				setMenuOpen(false);
+				triggerRef.current?.focus();
+			}
 		};
 		document.addEventListener('pointerdown', onPointer);
 		document.addEventListener('keydown', onKey);
@@ -81,12 +85,15 @@ export default function TitleBar<T extends string>({
 		<header className="z-10 border-b border-[var(--border)] bg-[var(--bg)] md:sticky md:top-0">
 			<div className="mx-auto flex max-w-4xl items-center gap-3 px-6 py-3">
 				<span className="shrink-0 text-lg font-bold tracking-tight text-[var(--text-h)]">
-					{[...title.slice(0, 5)].map((letter, i) => (
-						<span key={i} style={{ color: `var(--logo-${i + 1})` }}>
-							{letter}
-						</span>
-					))}
-					{title.slice(5)}
+					<span className="sr-only">{title}</span>
+					<span aria-hidden="true">
+						{[...title.slice(0, 5)].map((letter, i) => (
+							<span key={i} style={{ color: `var(--logo-${i + 1})` }}>
+								{letter}
+							</span>
+						))}
+						{title.slice(5)}
+					</span>
 				</span>
 
 				<div ref={slotRef} className="relative min-w-0 flex-1">
@@ -106,6 +113,7 @@ export default function TitleBar<T extends string>({
 					{collapsed ? (
 						<div ref={menuRef} className="relative w-fit max-w-full">
 							<button
+								ref={triggerRef}
 								type="button"
 								onClick={() => setMenuOpen((open) => !open)}
 								aria-expanded={menuOpen}
@@ -132,6 +140,7 @@ export default function TitleBar<T extends string>({
 											onClick={() => {
 												onSelect(id);
 												setMenuOpen(false);
+												triggerRef.current?.focus();
 											}}
 											className={`${tabClass(id)} text-left`}
 										>

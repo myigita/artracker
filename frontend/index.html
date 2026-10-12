@@ -8,7 +8,7 @@
     <script>
       try {
         const theme = localStorage.getItem('theme');
-        if (theme) document.documentElement.dataset.theme = theme;
+        if (['light', 'dark', 'bauhaus'].includes(theme)) document.documentElement.dataset.theme = theme;
       } catch {}
     </script>
   </head>
