@@ -19,7 +19,12 @@ export default function TitleBar<T extends string>({
 		<header className="z-10 border-b border-[var(--border)] bg-[var(--bg)] md:sticky md:top-0">
 			<div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-3 gap-y-2 px-6 py-3">
 				<span className="text-lg font-bold tracking-tight text-[var(--text-h)]">
-					{title}
+					{[...title.slice(0, 5)].map((letter, i) => (
+						<span key={i} style={{ color: `var(--logo-${i + 1})` }}>
+							{letter}
+						</span>
+					))}
+					{title.slice(5)}
 				</span>
 
 				<nav className="flex flex-wrap gap-1" role="tablist">
