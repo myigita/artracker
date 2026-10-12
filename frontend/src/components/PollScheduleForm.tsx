@@ -7,9 +7,6 @@ type Props = {
 	onSaved: (schedule: PollSchedule) => void;
 };
 
-// Offered as a fixed list rather than a free number field: the useful values are
-// few and well separated, and it makes the five-minute floor a thing you can't
-// type your way past rather than an error you discover after saving.
 const INTERVALS = [5, 10, 15, 30, 60, 180, 360, 720, 1440];
 
 function label(minutes: number): string {
@@ -62,8 +59,6 @@ export default function PollScheduleForm({ schedule, onSaved }: Props) {
 						checked={enabled}
 						disabled={saving}
 						onChange={(event) => {
-							// Saved immediately rather than behind a button: it's one
-							// switch, and a toggle that needs confirming reads as broken.
 							const next = event.target.checked;
 							setEnabled(next);
 							save(

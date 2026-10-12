@@ -1,6 +1,3 @@
-"""Platform endpoints. Same shape as subjects."""
-
-
 def test_create_platform(client):
 	response = client.post("/api/platforms/", json={"name": "Pixiv"})
 
@@ -40,7 +37,6 @@ def test_delete_missing_platform_404s(client):
 
 
 def test_cannot_delete_platform_still_in_use(client, subject, platform):
-	# The guard that stands in for SQLite's disabled foreign keys.
 	client.post(
 		"/api/trackers/",
 		json={
@@ -54,11 +50,8 @@ def test_cannot_delete_platform_still_in_use(client, subject, platform):
 
 	assert response.status_code == 409
 	assert "tracker" in response.json()["detail"].lower()
-	# and it's still there
 	assert len(client.get("/api/platforms/").json()) == 1
 
-
-# ---- notification-mail configuration ---------------------------------------
 
 def test_platform_has_no_mail_domain_by_default(client, platform):
 	assert platform["mail_domain"] is None
@@ -84,8 +77,6 @@ def test_mail_domain_is_lowercased(client):
 
 
 def test_two_platforms_cannot_share_a_mail_domain(client):
-	# One domain resolving to two platforms makes every message from it
-	# ambiguous, so this is a 409 rather than a silently dropped field.
 	client.post(
 		"/api/platforms/",
 		json={"name": "Patreon - Mail", "mail_domain": "creator.patreon.com"},
@@ -129,8 +120,6 @@ def test_import_rejects_two_platforms_sharing_a_domain(client):
 
 
 def test_import_allows_many_platforms_without_a_domain(client):
-	# The NULL case must not trip the duplicate check — most platforms are
-	# link-only and leave the field empty.
 	document = {
 		"version": 1,
 		"platforms": [{"name": "Pixiv"}, {"name": "Bluesky"}, {"name": "Danbooru"}],
@@ -142,11 +131,7 @@ def test_import_allows_many_platforms_without_a_domain(client):
 	assert response.json()["platforms_added"] == 3
 
 
-# ---- built-in platforms -----------------------------------------------------
-
 def test_a_seeded_platform_reports_itself_as_preset(client):
-	# is_preset is derived from the name against the seed list, so creating one
-	# by that name is enough — no need to run the seeder.
 	body = client.post("/api/platforms/", json={"name": "Patreon - Mail"}).json()
 
 	assert body["is_preset"] is True
@@ -157,8 +142,6 @@ def test_an_ordinary_platform_is_not_preset(client, platform):
 
 
 def test_a_preset_platform_cannot_be_deleted(client):
-	# Seeding recreates it on every boot, so allowing the delete meant the row
-	# vanished and then reappeared — which reads as the app ignoring you.
 	created = client.post("/api/platforms/", json={"name": "Patreon - Mail"}).json()
 
 	response = client.delete(f"/api/platforms/{created['id']}")
@@ -169,9 +152,6 @@ def test_a_preset_platform_cannot_be_deleted(client):
 
 
 def test_the_preset_check_ignores_case(client):
-	# Seeding matches names case-insensitively and adopts an existing row, so the
-	# protection has to cover the same spellings or an adopted platform stays
-	# deletable and comes straight back.
 	created = client.post("/api/platforms/", json={"name": "patreon - mail"}).json()
 
 	assert created["is_preset"] is True

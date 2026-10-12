@@ -1,7 +1,3 @@
-"""Category endpoints. Same shape as subjects and platforms, except the delete
-guard counts *subjects* rather than trackers."""
-
-
 def test_create_category(client):
 	response = client.post("/api/categories/", json={"name": "Character"})
 
@@ -41,8 +37,6 @@ def test_delete_missing_category_404s(client):
 
 
 def test_cannot_delete_category_still_in_use(client, category):
-	# SQLite isn't enforcing the foreign key, so this guard is the only thing
-	# stopping a subject from pointing at a category id that no longer exists.
 	client.post(
 		"/api/subjects/",
 		json={"name": "Denji", "category_name": category["name"]},

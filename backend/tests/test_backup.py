@@ -1,13 +1,4 @@
-"""Backup export/import.
-
-The atomicity test at the bottom is the important one: a file that fails
-validation halfway through must leave the database untouched, including the
-deletes that replace mode has already issued.
-"""
-
-
 def seed(client):
-	"""Two categories' worth of a realistic database. Returns the export."""
 	client.post("/api/categories/", json={"name": "Artist"})
 	client.post("/api/platforms/", json={"name": "Pixiv"})
 	client.post("/api/subjects/", json={"name": "Denji", "category_name": "Artist"})
@@ -38,7 +29,6 @@ def test_export_references_by_name_not_id(client):
 	assert body["subjects"][0]["category_name"] == "Artist"
 	assert body["trackers"][0]["subject_name"] == "Denji"
 	assert body["trackers"][0]["platform_name"] == "Pixiv"
-	# ids are deliberately absent — nothing outside the DB depends on them
 	assert "id" not in body["trackers"][0]
 	assert "id" not in body["subjects"][0]
 
@@ -52,7 +42,6 @@ def test_export_of_empty_database(client):
 
 def test_import_restores_into_an_empty_database(client):
 	backup = seed(client)
-	# wipe by hand, the way a fresh deployment would start
 	for tracker in client.get("/api/trackers/").json():
 		client.delete(f"/api/trackers/{tracker['id']}")
 	for subject in client.get("/api/subjects/").json():
@@ -95,7 +84,6 @@ def test_merge_skips_what_already_exists(client):
 	assert body["trackers_added"] == 0
 	assert body["skipped"] == 4
 	assert body["deleted"] == 0
-	# still one of each, not two
 	assert len(client.get("/api/trackers/").json()) == 1
 	assert len(client.get("/api/subjects/").json()) == 1
 
@@ -118,7 +106,6 @@ def test_merge_adds_only_what_is_missing(client):
 
 
 def test_merge_keeps_local_edits(client):
-	"""Merge is additive: a tracker already here is left exactly as it is."""
 	backup = seed(client)
 	tracker_id = client.get("/api/trackers/").json()[0]["id"]
 	client.patch(f"/api/trackers/{tracker_id}", json={"name": "Renamed locally"})
@@ -193,7 +180,6 @@ def test_future_version_is_rejected(client):
 
 	assert response.status_code == 400
 	assert "version" in response.json()["detail"].lower()
-	# and the existing data survived
 	assert len(client.get("/api/trackers/").json()) == 1
 
 
@@ -213,9 +199,6 @@ def test_tracker_referencing_unknown_subject_400s(client):
 
 
 def test_a_rejected_import_changes_nothing(client):
-	"""REGRESSION GUARD: replace mode deletes before it inserts. If a later row
-	fails validation, those deletes must roll back too — otherwise a typo in a
-	backup file empties the database."""
 	seed(client)
 	before_trackers = client.get("/api/trackers/").json()
 	before_subjects = client.get("/api/subjects/").json()
@@ -235,9 +218,6 @@ def test_a_rejected_import_changes_nothing(client):
 
 
 def test_restore_keeps_two_trackers_sharing_a_url(client, category):
-	"""REGRESSION: identity used to be the url alone, so restoring a backup
-	silently dropped every tracker after the first that shared a URL — data loss
-	in the feature whose whole job is preventing it."""
 	client.post("/api/platforms/", json={"name": "Pixiv"})
 	client.post("/api/subjects/", json={"name": "Denji"})
 	client.post("/api/subjects/", json={"name": "Power"})
@@ -258,8 +238,6 @@ def test_restore_keeps_two_trackers_sharing_a_url(client, category):
 
 
 def test_restore_keeps_exact_duplicate_rows(client, subject, platform):
-	"""Nothing stops two identical trackers existing, so a restore has to
-	reproduce both. The dedupe set must not grow as rows are inserted."""
 	for _ in range(2):
 		make = client.post("/api/trackers/", json={
 			"subject_name": subject["name"], "platform_name": platform["name"],

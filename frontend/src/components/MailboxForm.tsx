@@ -3,8 +3,6 @@ import type { MailAccount, MailAccountIn } from '../api';
 import { errorDetail } from '../api';
 
 type Props = {
-	// null while loading, so the form doesn't flash empty fields at a configured
-	// mailbox and invite someone to overwrite it with blanks.
 	account: MailAccount | null;
 	onSave: (data: MailAccountIn) => Promise<MailAccount>;
 	onSaved: (account: MailAccount) => void;
@@ -24,8 +22,7 @@ export default function MailboxForm({ account, onSave, onSaved, onClear, onClear
 	const [port, setPort] = useState(993);
 	const [username, setUsername] = useState('');
 	const [mailbox, setMailbox] = useState('INBOX');
-	// Always starts blank. The API never sends the password back, so an empty box
-	// means "leave it alone" rather than "there isn't one".
+	// Blank means "keep the stored password".
 	const [password, setPassword] = useState('');
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -47,8 +44,6 @@ export default function MailboxForm({ account, onSave, onSaved, onClear, onClear
 		setSaved(false);
 
 		const payload: MailAccountIn = { host, port, username, mailbox };
-		// Sent only when non-empty, which is what lets the host be edited without
-		// retyping the password.
 		if (password) payload.password = password;
 
 		onSave(payload)
@@ -74,9 +69,6 @@ export default function MailboxForm({ account, onSave, onSaved, onClear, onClear
 
 	const storedHere = account?.source === 'database';
 	const fromEnvironment = account?.source === 'environment';
-	// Only a database-backed account can preserve an omitted password. Environment
-	// credentials cannot be copied through the API, so creating the database
-	// override requires the user to enter its app password once.
 	const needsPassword = account?.source !== 'database' && !password;
 
 	return (

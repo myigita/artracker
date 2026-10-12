@@ -14,8 +14,7 @@ type Props = {
 	onCancel: () => void;
 };
 
-// Sentinel for the "new…" dropdown option. A real name could never collide
-// with this, and it keeps the choice in one piece of state instead of two.
+// Sentinel for the "new…" option.
 const NEW = '__new__';
 
 const inputClass =
@@ -46,15 +45,12 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 		getPlatforms().then(setPlatforms).catch(() => {});
 	}, []);
 
-	// The name we'll actually send, whichever way it was chosen.
 	const subjectName = subjectChoice === NEW ? newSubject.trim() : subjectChoice;
 	const platformName = platformChoice === NEW ? newPlatform.trim() : platformChoice;
 
 	const selectedPlatform = platforms.find((p) => p.name === platformName);
 	const isMail = Boolean(selectedPlatform?.mail_domain);
-	// Keep each platform's draft when switching the dropdown. Start with one empty
-	// positive rule: the platform domain is only a hint and is shared by every
-	// artist, so submitting it as the rule would send all Patreon mail everywhere.
+	// Start with one empty positive rule; the platform domain is too broad to be one.
 	const rules: MatchRuleIn[] = isMail
 		? ruleDrafts[platformName] ?? [{
 			field: 'sender', operator: 'contains', value: '',
@@ -69,7 +65,6 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 		(validRules.length === 0 || hasPositiveRule)) && !saving;
 
 	async function handleSubmit(event: React.FormEvent) {
-		// Without this the browser does a full page reload and the SPA dies.
 		event.preventDefault();
 		if (!canSubmit) return;
 
@@ -84,8 +79,6 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 			await createTracker({
 				subject_name: subjectName,
 				platform_name: platformName,
-				// Sent even when blank: the backend decides whether this platform
-				// can go without one, so the rule lives in exactly one place.
 				url: url.trim(),
 				rules: validRules.map((rule) => ({ ...rule, value: rule.value.trim() })),
 				...(name.trim() && { name: name.trim() }),

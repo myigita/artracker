@@ -14,14 +14,9 @@ import MailboxForm from './MailboxForm';
 import PollScheduleForm from './PollScheduleForm';
 
 type Props = {
-	// Polling can create updates, which changes every tracker's badge.
 	onPolled: () => void;
 };
 
-// The mailbox lives under Settings rather than a tab of its own: it's how the
-// app is configured to find updates, not a thing you browse. "Unmatched" sits
-// with it because it's the diagnostic for that same configuration — a list you
-// read when the settings aren't matching what you expected.
 export default function SettingsPanel({ onPolled }: Props) {
 	const [unmatched, setUnmatched] = useState<UnmatchedMail[]>([]);
 	const [account, setAccount] = useState<MailAccount | null>(null);
@@ -51,14 +46,9 @@ export default function SettingsPanel({ onPolled }: Props) {
 				onPolled();
 				return refresh();
 			})
-			// The backend's detail is worth showing verbatim here: a 503 names the
-			// exact environment variables that are missing, and a 502 carries the
-			// mail server's own complaint. A generic message would hide both.
 			.catch((err) => setError(errorDetail(err) ?? 'Could not check the mailbox.'))
 			.finally(() => {
 				setPolling(false);
-				// Manual checks participate in the same schedule, so refresh the
-				// last-result and next-run text whether the attempt worked or failed.
 				getPollSchedule().then(setSchedule).catch(() => {});
 			});
 	}
@@ -139,9 +129,6 @@ export default function SettingsPanel({ onPolled }: Props) {
 									<span className="truncate font-medium text-[var(--text-h)]">
 										{item.subject || '(no subject)'}
 									</span>
-									{/* Absolute rather than relative: this is a diagnostic view,
-									    and "which message was that" is answered by a timestamp
-									    you can match against the mailbox. */}
 									<span className="ml-auto shrink-0 text-xs text-[var(--text)]">
 										{new Date(item.received_at).toLocaleString()}
 									</span>

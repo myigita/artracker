@@ -1,11 +1,3 @@
-"""Match rules on trackers.
-
-These replaced subject handles. The reason is in test_mail.py — a handle could
-only ever be the sender's local part, so a platform that mails from one generic
-address and names the artist in the subject line was impossible to express.
-Here we only care that the rules themselves round-trip properly.
-"""
-
 SENDER_RULE = {"field": "sender", "operator": "contains", "value": "creator.patreon.com"}
 SUBJECT_RULE = {"field": "subject", "operator": "not_contains", "value": "digest"}
 POSITIVE_SUBJECT_RULE = {"field": "subject", "operator": "contains", "value": "peargor"}
@@ -50,7 +42,6 @@ def test_negative_rules_cannot_match_without_a_positive_rule(client, subject, pl
 
 
 def test_patch_without_rules_leaves_them_alone(client, subject, platform):
-	# Same exclude_unset distinction every other field relies on.
 	created = make(client, subject, platform, rules=[SENDER_RULE]).json()
 
 	body = client.patch(f"/api/trackers/{created['id']}", json={"name": "Renamed"}).json()
@@ -60,12 +51,6 @@ def test_patch_without_rules_leaves_them_alone(client, subject, platform):
 
 
 def test_resending_an_unchanged_rule_is_not_an_error(client, subject, platform):
-	"""Regression in shape, not in kind.
-
-	The handles version reassigned the whole collection, which made SQLAlchemy
-	delete every row and insert every row with no guaranteed ordering — so a value
-	re-sent unchanged collided with itself. _set_rules touches only the difference.
-	"""
 	created = make(client, subject, platform, rules=[SENDER_RULE]).json()
 
 	response = client.patch(
@@ -92,7 +77,6 @@ def test_rule_values_are_stripped(client, subject, platform):
 
 
 def test_an_unknown_field_is_rejected(client, subject, platform):
-	# body isn't an option yet — the enum is what keeps that honest.
 	response = make(
 		client, subject, platform,
 		rules=[{"field": "body", "operator": "contains", "value": "x"}],
@@ -130,8 +114,6 @@ def test_deleting_a_tracker_takes_its_rules_with_it(client, subject, platform, d
 
 
 def test_rules_survive_a_backup_round_trip(client, subject, platform):
-	# Configuration, not derived data — an export that dropped them would restore
-	# a database that silently matches nothing.
 	make(client, subject, platform, rules=[SENDER_RULE, SUBJECT_RULE])
 	document = client.get("/api/backup/export").json()
 

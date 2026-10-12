@@ -1,10 +1,6 @@
 import { useState } from 'react';
 import { isConflict } from '../api';
 
-// Subjects, Platforms and Categories all reduce to an id and a name, so one
-// component serves all three. Generic in T rather than fixed to NameItem so
-// renderExtra can see the full item — the subjects list needs `category_name`,
-// which the other two don't have.
 type NameItem = {
 	id: number;
 	name: string;
@@ -13,26 +9,14 @@ type NameItem = {
 type Props<T extends NameItem> = {
 	label: string;
 	items: T[];
-	// How many rows point at this name. Computed by the parent from lists it
-	// already has in state — no extra endpoint needed.
 	usageCount: (name: string) => number;
-	// What the count counts. Subjects and platforms are used by trackers;
-	// categories are used by subjects.
 	usageLabel?: string;
 	// Only needed when label + "s" is wrong — "categorys".
 	plural?: string;
-	// What to do about it when a delete is refused.
 	blockedHint?: string;
-	// Rows that can never be deleted, whatever their usage count. The button is
-	// disabled with an explanation rather than hidden, so its absence doesn't
-	// read as a rendering bug.
 	isProtected?: (item: T) => boolean;
 	protectedHint?: string;
-	// Optional per-row control, rendered after the name. Always visible.
 	renderExtra?: (item: T) => React.ReactNode;
-	// Optional detail panel, revealed by a chevron. Supplying this is what makes
-	// rows expandable at all — lists without it (platforms, categories) render
-	// exactly as before, with no chevron and nothing to open.
 	renderExpanded?: (item: T) => React.ReactNode;
 	onDelete: (id: number) => Promise<unknown>;
 	onDeleted: () => void;
@@ -54,8 +38,6 @@ export default function NameList<T extends NameItem>({
 }: Props<T>) {
 	const [error, setError] = useState<string | null>(null);
 	const [busyId, setBusyId] = useState<number | null>(null);
-	// A set rather than a single id: opening one row shouldn't close another.
-	// Comparing two subjects' handles is a real thing to want to do.
 	const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
 	function toggle(id: number) {
@@ -107,9 +89,6 @@ export default function NameList<T extends NameItem>({
 								key={item.id}
 								className="rounded-lg border border-[var(--border)]"
 							>
-								{/* flex-wrap so the header degrades by stacking rather than
-								    overflowing the viewport — the subjects header carries a
-								    chevron, name, category select, count and delete. */}
 								<div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
 									{renderExpanded && (
 										<button
@@ -142,10 +121,6 @@ export default function NameList<T extends NameItem>({
 									<span className="ml-auto shrink-0 text-xs text-[var(--text)]">
 										{count === 1 ? `1 ${usageLabel}` : `${count} ${usageLabel}s`}
 									</span>
-									{/* The × is omitted for protected rows rather than disabled — a
-								    greyed-out one still reads as something you might be able to
-								    click. A label takes its slot so the row stays aligned and
-								    the absence explains itself instead of looking like a bug. */}
 									{protectedRow && (
 										<span
 											title={protectedHint}

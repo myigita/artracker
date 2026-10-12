@@ -7,9 +7,6 @@ type Props = {
 	valueHint?: string;
 };
 
-// Controlled rather than self-saving: rules are edited inside the tracker's edit
-// form and go up with everything else on Save, so a half-typed rule can be
-// abandoned by cancelling — the same as a half-typed URL.
 
 const FIELDS: { value: MatchField; label: string }[] = [
 	{ value: 'sender', label: 'Sender' },
@@ -52,9 +49,7 @@ export default function MatchRulesEditor({ rules, onChange, disabled, valueHint 
 
 			<div className="mt-2 flex flex-col gap-2">
 				{rules.map((rule, index) => (
-					// Index as key, deliberately. These rows have no stable identity —
-					// the server replaces the whole set on save and assigns new ids — and
-					// reordering isn't possible, so the index IS the identity here.
+					// Index key: rows have no stable id and can't be reordered.
 					<div key={index} className="flex flex-wrap items-center gap-2">
 						<select
 							value={rule.field}

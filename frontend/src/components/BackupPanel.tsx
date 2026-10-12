@@ -3,7 +3,6 @@ import type { ImportMode, ImportResult } from '../api';
 import { exportBackup, importBackup, errorDetail } from '../api';
 
 type Props = {
-	// Re-fetch everything after an import — the whole database may have changed.
 	onImported: () => void;
 };
 
@@ -16,10 +15,7 @@ function today() {
 }
 
 export default function BackupPanel({ onImported }: Props) {
-	// The <input type="file"> is uncontrolled — clearing the state above doesn't
-	// clear what it displays, so after an import it would keep showing the
-	// filename next to a disabled button and look stuck. Only the DOM node can
-	// reset that.
+	// The file input is uncontrolled, so it has to be reset through the DOM.
 	const fileInput = useRef<HTMLInputElement>(null);
 	const [file, setFile] = useState<File | null>(null);
 	const [mode, setMode] = useState<ImportMode>('merge');
@@ -34,8 +30,7 @@ export default function BackupPanel({ onImported }: Props) {
 
 		exportBackup()
 			.then((data) => {
-				// Build the file in memory and click a link at it. revokeObjectURL
-				// matters: without it the blob is held for the life of the page.
+				// Revoke, or the blob is held for the life of the page.
 				const blob = new Blob([JSON.stringify(data, null, 2)], {
 					type: 'application/json',
 				});
@@ -54,8 +49,7 @@ export default function BackupPanel({ onImported }: Props) {
 		setFile(chosen);
 		setResult(null);
 		setError(null);
-		// Any change invalidates a pending "are you sure?" — otherwise you could
-		// confirm one file and import a different one.
+		// Any change cancels a pending confirmation.
 		setConfirming(false);
 	}
 

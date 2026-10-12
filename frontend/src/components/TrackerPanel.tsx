@@ -21,8 +21,6 @@ import BackupPanel from './BackupPanel';
 import SettingsPanel from './SettingsPanel';
 import TitleBar from './TitleBar';
 
-// Only one form is open at a time, so a single value beats four booleans —
-// it makes "these are mutually exclusive" true by construction.
 type OpenForm = 'tracker' | 'subject' | 'platform' | 'category' | null;
 type Tab = 'trackers' | 'subjects' | 'platforms' | 'categories' | 'settings' | 'backup';
 
@@ -44,9 +42,7 @@ export default function TrackerPanel() {
 	const [tab, setTab] = useState<Tab>('trackers');
 	const [openForm, setOpenForm] = useState<OpenForm>(null);
 	const [notice, setNotice] = useState<string | null>(null);
-	// "No trackers yet" and "couldn't reach the server" both render an empty
-	// list, so the empty state MUST be able to tell them apart — otherwise a
-	// dead backend looks exactly like a deleted database.
+	// Must tell "no trackers" apart from "backend unreachable".
 	const [loading, setLoading] = useState(true);
 	const [loadError, setLoadError] = useState(false);
 
@@ -97,8 +93,6 @@ export default function TrackerPanel() {
 		setNotice(`Added ${kind} “${name}”.`);
 	}
 
-	// Trackers carry subject_name/platform_name, so usage counts come straight
-	// off the list already in state — no extra endpoint needed.
 	function subjectUsage(name: string) {
 		return trackers.filter((t) => t.subject_name === name).length;
 	}
@@ -107,7 +101,6 @@ export default function TrackerPanel() {
 		return trackers.filter((t) => t.platform_name === name).length;
 	}
 
-	// A category is used by subjects, not trackers — same idea, different list.
 	function categoryUsage(name: string) {
 		return subjects.filter((s) => s.category_name === name).length;
 	}
@@ -120,18 +113,15 @@ export default function TrackerPanel() {
 	const buttonClass =
 		'cursor-pointer rounded-md px-3 py-2 text-sm font-medium transition-opacity hover:opacity-90';
 
-	// null means "no count to show" — Backup is a pair of actions, not a list.
 	const counts: Record<Tab, number | null> = {
 		trackers: trackers.length,
 		subjects: subjects.length,
 		platforms: platforms.length,
 		categories: categories.length,
-		// Both are pairs of actions rather than lists, so neither has a count.
 		settings: null,
 		backup: null,
 	};
 
-	// The "+ Add" button follows whichever tab you're on; null hides it.
 	const addFormFor: Record<Tab, OpenForm> = {
 		trackers: 'tracker',
 		subjects: 'subject',
@@ -279,8 +269,6 @@ export default function TrackerPanel() {
 						label="Platform"
 						items={platforms}
 						usageCount={platformUsage}
-						// The backend refuses these and recreates them on every start, so
-						// offering a button that always 409s would just be a trap.
 						isProtected={(item) => item.is_preset}
 						protectedHint="Built in — recreated on every start, so it can’t be deleted."
 						onDelete={deletePlatform}

@@ -8,9 +8,7 @@ type Props = {
 	onChanged: () => void;
 };
 
-// A <select> can't hold null, so "no category" is the empty string in the DOM
-// and gets translated back to an explicit null for the PATCH — which is what
-// the API reads as "clear it".
+// <select> can't hold null: "" in the DOM, null in the PATCH.
 const NONE = '';
 
 export default function SubjectCategorySelect({ subject, categories, onChanged }: Props) {
@@ -29,8 +27,6 @@ export default function SubjectCategorySelect({ subject, categories, onChanged }
 			.finally(() => setSaving(false));
 	}
 
-	// With no categories defined the only option is "No category", so the control
-	// would be a dead end. Disabled with an explanation beats silently useless.
 	const noCategoriesYet = categories.length === 0;
 
 	return (

@@ -1,10 +1,3 @@
-"""Notification-mail polling: parsing, matching, and the unread badge.
-
-The IMAP half is swapped out via dependency_overrides, exactly the way get_db is
-— so everything here exercises the real matching logic without a mail server
-existing anywhere. The IMAP adapter has a focused fake-server test to pin its UID
-cursor and BODY.PEEK behavior.
-"""
 from datetime import datetime
 
 import pytest
@@ -21,15 +14,11 @@ from app.mail import (
 from app.models import MatchRule, utcnow
 from app.main import app
 
-# Fixed timestamps rather than utcnow(): the badge compares detected_at against
-# last_checked, and two calls landing in the same microsecond would make these
-# tests flaky for reasons that have nothing to do with the code.
 EARLIER = datetime(2026, 8, 30, 7, 0, 0)
 
 
 @pytest.fixture
 def mailbox(client):
-	"""A list standing in for the inbox. Append messages, then POST /api/mail/poll."""
 	inbox: list[IncomingMail] = []
 
 	app.dependency_overrides[get_mail_config] = lambda: MailConfig(
@@ -61,10 +50,6 @@ def message(sender, subject="August Character Poll", message_id=None, received_a
 
 
 def patreon(client):
-	"""A complete chain: platform with a known mail domain, subject, tracker.
-
-	The rule identifies the artist rather than merely the shared Patreon domain.
-	"""
 	client.post(
 		"/api/platforms/",
 		json={"name": "Patreon - Mail", "mail_domain": "creator.patreon.com"},
@@ -83,8 +68,6 @@ def patreon(client):
 	).json()
 
 
-# ---- parsing ---------------------------------------------------------------
-
 def test_parses_a_real_patreon_header():
 	raw = (
 		b"From: =?utf-8?B?UGVhcuWTpQ==?= <peargor@creator.patreon.com>\r\n"
@@ -98,11 +81,9 @@ def test_parses_a_real_patreon_header():
 
 	parsed = parse_message(raw)
 
-	# The display name is dropped; rules match against the bare address.
 	assert parsed.sender == "peargor@creator.patreon.com"
 	assert parsed.subject == "August Character Poll"
 	assert parsed.message_id == "<abc123@creator.patreon.com>"
-	# +03:00 converted to UTC, not merely stripped.
 	assert parsed.received_at == datetime(2026, 8, 30, 4, 42, 0)
 
 
@@ -124,8 +105,6 @@ def test_sender_is_lowercased():
 
 
 def test_message_without_an_id_falls_back_to_a_content_hash():
-	# Message-ID is the idempotency key, so something has to fill it rather than
-	# the message being dropped.
 	raw = b"From: a@creator.patreon.com\r\nSubject: Hi\r\n\r\nbody\r\n"
 
 	assert parse_message(raw).message_id.startswith("sha256:")
@@ -136,7 +115,6 @@ def test_message_without_a_usable_sender_is_unparseable():
 
 
 def test_imap_polling_uses_uids_and_does_not_depend_on_unread(monkeypatch):
-	"""Read mail still appears in UID SEARCH ALL, and BODY.PEEK does not mark it read."""
 	raw = (
 		b"From: peargor@creator.patreon.com\r\n"
 		b"Message-ID: <uid-test@example.test>\r\n"
@@ -172,8 +150,6 @@ def test_imap_polling_uses_uids_and_does_not_depend_on_unread(monkeypatch):
 	assert any("BODY.PEEK" in call[-1] for call in FakeImap.calls if call[0] == "fetch")
 
 
-# ---- matching --------------------------------------------------------------
-
 def test_poll_records_an_update(client, mailbox):
 	tracker = patreon(client)
 	mailbox.append(message("peargor@creator.patreon.com"))
@@ -205,9 +181,6 @@ def test_polling_twice_fetches_nothing_past_the_saved_uid(client, mailbox):
 
 
 def test_the_same_message_twice_in_one_batch_collides_with_itself(client, mailbox):
-	# Regression: autoflush is off, so a row added moments ago is invisible to
-	# db.query(). Without the in-pass `seen` set both copies pass the existence
-	# check and then break the unique constraint at commit, failing the whole poll.
 	patreon(client)
 	duplicate = message("peargor@creator.patreon.com", message_id="<same@id>")
 	mailbox.extend([duplicate, duplicate])
@@ -230,8 +203,6 @@ def test_mail_no_rule_claims_is_recorded_as_unmatched(client, mailbox):
 
 
 def test_a_tracker_with_no_rules_never_matches(client, mailbox, subject, platform):
-	# all([]) is True, so without an explicit guard every rule-less tracker would
-	# claim every message the moment mail started arriving.
 	client.post(
 		"/api/trackers/",
 		json={
@@ -246,7 +217,6 @@ def test_a_tracker_with_no_rules_never_matches(client, mailbox, subject, platfor
 
 
 def test_a_legacy_negative_only_tracker_never_matches(client, mailbox, subject, platform, db_session):
-	"""Rows created before API validation must also fail closed at match time."""
 	tracker = client.post(
 		"/api/trackers/",
 		json={
@@ -273,7 +243,6 @@ def test_a_legacy_negative_only_tracker_never_matches(client, mailbox, subject, 
 
 
 def test_all_of_a_trackers_rules_must_hold(client, mailbox, subject):
-	# The AND is what makes not_contains useful: catch this sender, except digests.
 	client.post("/api/platforms/", json={"name": "Patreon - Mail"})
 	tracker = client.post(
 		"/api/trackers/",
@@ -299,8 +268,6 @@ def test_all_of_a_trackers_rules_must_hold(client, mailbox, subject):
 
 
 def test_a_subject_line_rule_matches_a_generic_sender(client, mailbox, subject):
-	# The case the old handle model could not express at all: one shared sender
-	# address, with the artist named in the subject line.
 	client.post("/api/platforms/", json={"name": "Pixiv - Mail"})
 	client.post(
 		"/api/trackers/",
@@ -317,8 +284,6 @@ def test_a_subject_line_rule_matches_a_generic_sender(client, mailbox, subject):
 
 
 def test_one_message_can_land_on_several_trackers(client, mailbox, subject):
-	# Two artists genuinely can appear in one notification; that's information
-	# rather than an error, so it records on both.
 	client.post("/api/platforms/", json={"name": "Pixiv - Mail"})
 	client.post("/api/subjects/", json={"name": "Other"})
 	for name, needle in [(subject["name"], "peargor"), ("Other", "nyantcha")]:
@@ -364,17 +329,11 @@ def test_unmatched_mail_can_be_dismissed(client, mailbox):
 
 
 def test_poll_without_configuration_503s(client, no_mail_env):
-	# No `mailbox` fixture and no stored account, so there is no config at all.
-	# no_mail_env matters: without it this passes only on a machine that happens
-	# not to export ARTRACKER_MAIL_*, which stops being true the moment someone
-	# actually configures the feature that way.
 	response = client.post("/api/mail/poll")
 
 	assert response.status_code == 503
 	assert "ARTRACKER_MAIL_HOST" in response.json()["detail"]
 
-
-# ---- the badge -------------------------------------------------------------
 
 def test_unread_count_appears_on_the_tracker(client, mailbox):
 	patreon(client)
@@ -385,8 +344,6 @@ def test_unread_count_appears_on_the_tracker(client, mailbox):
 
 
 def test_opening_the_tracker_clears_the_badge(client, mailbox):
-	# No separate "last seen" column: Open already stamps last_checked, and the
-	# badge counts updates newer than it.
 	tracker = patreon(client)
 	mailbox.append(message("peargor@creator.patreon.com"))
 	client.post("/api/mail/poll")
@@ -402,15 +359,12 @@ def test_undoing_a_check_brings_the_badge_back(client, mailbox):
 	client.post("/api/mail/poll")
 	client.post(f"/api/trackers/{tracker['id']}/check")
 
-	# The existing undo — last_checked is writable, and null means "never checked".
 	client.patch(f"/api/trackers/{tracker['id']}", json={"last_checked": None})
 
 	assert client.get("/api/trackers/").json()[0]["unread_count"] == 1
 
 
 def test_deleting_a_tracker_takes_its_updates_with_it(client, mailbox):
-	# Otherwise the orphaned rows keep their unique external_ref reserved and the
-	# same mail can never be recorded again.
 	tracker = patreon(client)
 	mailbox.append(message("peargor@creator.patreon.com", message_id="<keep@me>"))
 	client.post("/api/mail/poll")
@@ -424,8 +378,6 @@ def test_deleting_a_tracker_takes_its_updates_with_it(client, mailbox):
 	assert len(client.get(f"/api/trackers/{rebuilt['id']}/updates").json()) == 1
 
 
-# ---- stored mailbox credentials --------------------------------------------
-
 import json as _json
 
 from app.mail import resolve_mail_config
@@ -436,7 +388,6 @@ MAILBOX_ENV = ("ARTRACKER_MAIL_HOST", "ARTRACKER_MAIL_USER", "ARTRACKER_MAIL_PAS
 
 @pytest.fixture
 def no_mail_env(monkeypatch):
-	"""Nothing configured through the environment, whatever the shell has set."""
 	for name in MAILBOX_ENV:
 		monkeypatch.delenv(name, raising=False)
 
@@ -467,8 +418,6 @@ def test_saving_the_mailbox(client, no_mail_env):
 
 
 def test_the_password_is_never_returned(client, no_mail_env):
-	# The whole reason MailAccountOut omits it: every endpoint here is
-	# unauthenticated, so anything on a response model is public.
 	save_account(client)
 
 	body = client.get("/api/mail/account").json()
@@ -478,7 +427,6 @@ def test_the_password_is_never_returned(client, no_mail_env):
 
 
 def test_the_password_is_not_in_the_backup(client, no_mail_env):
-	# The export is a file that gets downloaded and passed around.
 	save_account(client)
 
 	document = client.get("/api/backup/export").json()
@@ -496,8 +444,6 @@ def test_the_first_save_requires_a_password(client, no_mail_env):
 
 
 def test_editing_without_a_password_keeps_the_stored_one(client, db_session, no_mail_env):
-	# The UI never receives the password back, so it has nothing to resend when
-	# only the host changes. Without this, editing any field wipes the credential.
 	save_account(client)
 
 	save_account(client, host="imap2.example.test", password=None)
@@ -543,8 +489,6 @@ def test_an_empty_password_is_rejected_rather_than_wiping(client, no_mail_env):
 
 
 def test_the_stored_mailbox_beats_the_environment(client, db_session, monkeypatch):
-	# Otherwise saving credentials in the UI appears to do nothing on a container
-	# that already sets the variables.
 	monkeypatch.setenv("ARTRACKER_MAIL_HOST", "env.example.test")
 	monkeypatch.setenv("ARTRACKER_MAIL_USER", "env@example.test")
 	monkeypatch.setenv("ARTRACKER_MAIL_PASSWORD", "envpass")
@@ -554,7 +498,6 @@ def test_the_stored_mailbox_beats_the_environment(client, db_session, monkeypatc
 
 
 def test_the_environment_is_used_when_nothing_is_stored(db_session, monkeypatch):
-	# Keeps existing Docker deployments working untouched.
 	monkeypatch.setenv("ARTRACKER_MAIL_HOST", "env.example.test")
 	monkeypatch.setenv("ARTRACKER_MAIL_USER", "env@example.test")
 	monkeypatch.setenv("ARTRACKER_MAIL_PASSWORD", "envpass")
@@ -592,18 +535,12 @@ def test_clearing_a_mailbox_that_was_never_set_404s(client, no_mail_env):
 
 
 def test_a_saved_mailbox_makes_polling_possible(client, db_session, no_mail_env):
-	# Without a stored account and without the env vars, /poll 503s. Saving one
-	# is what turns the feature on.
 	assert client.post("/api/mail/poll").status_code == 503
 
 	save_account(client)
 
-	# Now it gets as far as trying to reach the mailbox, which fails at connect
-	# rather than at configuration.
 	assert client.post("/api/mail/poll").status_code == 502
 
-
-# ---- the background schedule -----------------------------------------------
 
 from datetime import timedelta
 
@@ -614,8 +551,6 @@ from app.models import PollSchedule
 def test_the_schedule_starts_off(client):
 	body = client.get("/api/mail/schedule").json()
 
-	# A container that starts reaching out to a mail server the moment it boots
-	# is not a good default.
 	assert body["enabled"] is False
 	assert body["last_run_at"] is None
 	assert body["next_run_at"] is None
@@ -679,8 +614,6 @@ def test_a_schedule_is_not_due_until_the_interval_has_passed():
 
 
 def test_the_floor_applies_even_if_the_row_says_otherwise():
-	# The schema stops anything under five getting in, but a hand-edited database
-	# shouldn't be able to turn this into a busy loop against someone's IMAP server.
 	schedule = PollSchedule(enabled=True, interval_minutes=1, last_run_at=EARLIER)
 
 	assert _due(schedule, EARLIER + timedelta(minutes=2)) is False
@@ -696,8 +629,6 @@ def test_poll_if_due_does_nothing_when_it_is_not_due(client, db_session, no_mail
 
 
 def test_poll_if_due_records_a_result_it_can_show(client, db_session, no_mail_env):
-	# No mailbox configured, so the pass is a no-op — but it still has to leave a
-	# trace. A background poller has no request to watch fail.
 	client.put("/api/mail/schedule", json={"enabled": True, "interval_minutes": 5})
 
 	result = poll_if_due(lambda: db_session)
@@ -707,9 +638,6 @@ def test_poll_if_due_records_a_result_it_can_show(client, db_session, no_mail_en
 
 
 def test_a_failing_poll_is_recorded_rather_than_raised(client, db_session, monkeypatch):
-	"""The loop has nothing above it to catch anything, so a failure has to be
-	swallowed and written down — otherwise the poller dies silently on the first
-	bad night and never runs again."""
 	import app.mail as mail_module
 
 	monkeypatch.setattr(
@@ -724,12 +652,9 @@ def test_a_failing_poll_is_recorded_rather_than_raised(client, db_session, monke
 
 
 def test_the_run_is_stamped_before_the_work(client, db_session, no_mail_env):
-	"""A poll that hangs would otherwise look overdue on every tick, and each tick
-	would start another one on top of it."""
 	client.put("/api/mail/schedule", json={"enabled": True, "interval_minutes": 5})
 
 	poll_if_due(lambda: db_session)
 
 	assert client.get("/api/mail/schedule").json()["last_run_at"] is not None
-	# Immediately not due again.
 	assert poll_if_due(lambda: db_session) is None

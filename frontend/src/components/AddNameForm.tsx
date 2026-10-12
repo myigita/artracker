@@ -3,8 +3,6 @@ import { isConflict } from '../api';
 
 type Props = {
 	label: string;
-	// Passed in by the parent so this one component serves both subjects and
-	// platforms — they differ only in which endpoint they hit.
 	onCreate: (name: string) => Promise<unknown>;
 	onCreated: (name: string) => void;
 	onCancel: () => void;

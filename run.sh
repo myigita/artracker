@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
-# Starts both dev servers: the FastAPI backend on :8000 and Vite on :5173.
-#
-# Browse to http://localhost:5173 — never :8000. Vite proxies /api to the
-# backend, which keeps the app same-origin and means no CORS config.
-#
-# Ctrl-C stops both. So does either one crashing: `wait -n` returns as soon as
-# the first process exits, and the EXIT trap takes the survivor down with it.
-# Without that you'd be left with a half-running app and a stale port.
+# Starts both dev servers; open http://localhost:5173. Ctrl-C, or either one exiting, stops both.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -27,21 +20,17 @@ fi
 pids=()
 
 cleanup() {
-  # Clear the traps first so a second Ctrl-C during shutdown doesn't re-enter.
   trap - INT TERM EXIT
   kill "${pids[@]}" 2>/dev/null || true
   wait "${pids[@]}" 2>/dev/null || true
 }
 trap cleanup INT TERM EXIT
 
-# Each server runs from its own directory. uvicorn needs backend/ on the path
-# for `app.main`, and the default DATABASE_URL is relative — started from the
-# repo root it would create a second, empty artracker.db in the wrong place.
+# Run from backend/: the default DATABASE_URL is relative.
 (cd backend && exec .venv/bin/uvicorn app.main:app --reload) &
 pids+=($!)
 
-# vite directly rather than `npm run dev`: npm would sit in the middle as a
-# wrapper process, and killing it can orphan the vite child it spawned.
+# vite directly: killing an npm wrapper can orphan its child.
 (cd frontend && exec node_modules/.bin/vite) &
 pids+=($!)
 
@@ -50,5 +39,4 @@ echo "  backend  http://localhost:8000"
 echo "  app      http://localhost:5173   <- open this one"
 echo
 
-# Returns as soon as EITHER server exits; the EXIT trap stops the other.
 wait -n

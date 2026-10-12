@@ -40,35 +40,22 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 	const [name, setName] = useState(tracker.name);
 	const [url, setUrl] = useState(tracker.url);
 	const [description, setDescription] = useState(tracker.description ?? '');
-	// Stripped of their ids: rules are replaced wholesale on save, so the server
-	// assigns fresh ones and sending the old ones back would be meaningless.
 	const [rules, setRules] = useState<MatchRuleIn[]>(() =>
 		tracker.rules.map(({ field, operator, value }) => ({ field, operator, value })),
 	);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	// The stamp to put back, captured before the check overwrote it. Wrapped in
-	// an object because the value itself can legitimately be null ("never
-	// checked"), which would otherwise be indistinguishable from "nothing to undo".
+	// Boxed, because null ("never checked") is a valid value to restore.
 	const [undo, setUndo] = useState<{ previous: string | null } | null>(null);
-	// Fetched on demand rather than with the list: the count comes down with every
-	// tracker, but the summaries behind it are only wanted for the one card the
-	// user actually asks about.
 	const [updates, setUpdates] = useState<Update[] | null>(null);
 
-	// Deliberately NOT on a timer. Opening a link moves focus to a new tab, so
-	// the user is looking at the artist's page — possibly for minutes — before
-	// they come back and realise they didn't mean to mark it checked. A short
-	// countdown would always have expired by the moment the offer is wanted.
-	// The offer lasts until it's used or the page is reloaded.
+	// No timer on purpose: the user notices the mistake after coming back from the other tab.
 
 	function handleOpen() {
 		// Read this BEFORE the check lands — afterwards it's already overwritten.
 		const previous = tracker.last_checked;
 
-		// Deliberately fire-and-forget: the link opens via the anchor's own
-		// navigation, so a failed stamp must not block it. No undo is offered if
-		// the stamp never happened.
+		// Fire-and-forget: a failed stamp must not block the link.
 		checkTracker(tracker.id)
 			.then(() => {
 				setUndo({ previous });
@@ -77,10 +64,6 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 			.catch(() => {});
 	}
 
-	// A tracker on a mail-tracked platform can have no URL, so there's no link to
-	// click and therefore nothing to stamp last_checked — which is what clears the
-	// unread badge. This is that stamp on its own. Unlike handleOpen it reports
-	// failure, because here nothing else happened to mask it.
 	function handleMarkChecked() {
 		const previous = tracker.last_checked;
 
@@ -125,8 +108,6 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 	}
 
 	function startEditing() {
-		// Reset the fields from props each time, so a cancelled edit
-		// doesn't leave stale text behind on the next open.
 		setName(tracker.name);
 		setUrl(tracker.url);
 		setDescription(tracker.description ?? '');
@@ -158,14 +139,8 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 		setError(null);
 		updateTracker(tracker.id, {
 			name: name.trim(),
-			// Sent even when blank. Whether this tracker may go without a URL
-			// depends on its platform, which the card doesn't know — the backend
-			// does, and it answers with a message worth showing.
 			url: url.trim(),
 			description: description.trim() || null,
-			// Blank-valued rows are dropped rather than sent: an empty rule is a
-			// half-finished thought, and the API rejects it with a schema error
-			// that says nothing useful about which row is at fault.
 			rules: rules
 				.filter((rule) => rule.value.trim())
 				.map((rule) => ({ ...rule, value: rule.value.trim() })),
@@ -183,10 +158,6 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 		<div onClick={handleCardClick} className="group/card cursor-pointer rounded-lg border border-[var(--border)] p-4 shadow-sm transition-colors hover:border-[var(--accent-border)]">
 			<div className="flex items-center gap-2">
 				<h3 className="truncate font-semibold text-[var(--text-h)]">{tracker.name}</h3>
-				{/* Only when there's something to report. A "0" on every card would
-				    be noise, and the count is exactly the thing meant to catch the
-				    eye when it isn't zero. Clicking it reveals what the updates
-				    actually were — the subject lines are already stored. */}
 				{tracker.unread_count > 0 && (
 					<button
 						type="button"
@@ -200,8 +171,6 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 						{tracker.unread_count} new
 					</button>
 				)}
-				{/* Omitted entirely when the subject has no category — an empty
-				    pill would be noise on every uncategorized card. */}
 				{tracker.subject_category && (
 					<span className="shrink-0 rounded-full bg-[var(--accent-bg)] px-2 py-0.5 text-xs text-[var(--text)]">
 						{tracker.subject_category}
@@ -230,9 +199,6 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 						<CheckIcon />
 					</button>
 				)}
-				{/* Rules are only visible while editing, so the count is the only
-				    sign a card is watching mail at all — and "0 rules" on a tracker
-				    with no URL is the shape of one that can never do anything. */}
 				{tracker.rules.length > 0 && (
 					<span
 						title={tracker.rules

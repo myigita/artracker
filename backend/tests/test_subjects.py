@@ -1,12 +1,4 @@
-"""Example tests — the pattern to copy for the rest.
-
-Run with:  .venv/bin/pytest        (from backend/)
-"""
-
-
 def test_create_subject(client):
-	# `client` is the fixture from conftest.py — pytest passes it in because
-	# the parameter is named `client`. Same idea as Depends(get_db).
 	response = client.post("/api/subjects/", json={"name": "Denji"})
 
 	assert response.status_code == 201
@@ -21,8 +13,6 @@ def test_duplicate_subject_is_rejected(client):
 
 
 def test_subjects_start_empty(client):
-	# Proof the DB really is fresh per test: the subject created in the tests
-	# above is not here. If this fails, the fixtures are leaking state.
 	response = client.get("/api/subjects/")
 
 	assert response.status_code == 200
@@ -52,7 +42,6 @@ def test_delete_missing_subject_404s(client):
 
 
 def test_cannot_delete_subject_still_in_use(client, subject, platform):
-	# The guard that stands in for SQLite's disabled foreign keys.
 	client.post(
 		"/api/trackers/",
 		json={
@@ -104,7 +93,6 @@ def test_create_subject_with_unknown_category_400s(client):
 	)
 
 	assert response.status_code == 400
-	# and nothing was created
 	assert client.get("/api/subjects/").json() == []
 
 
@@ -116,7 +104,6 @@ def test_patch_assigns_category(client, subject, category):
 
 	assert response.status_code == 200
 	assert response.json()["category_name"] == "Character"
-	# and it stuck
 	assert client.get("/api/subjects/").json()[0]["category_name"] == "Character"
 
 
@@ -132,8 +119,6 @@ def test_patch_with_null_clears_category(client, subject, category):
 def test_patch_with_omitted_field_leaves_category_alone(client, subject, category):
 	client.patch(f"/api/subjects/{subject['id']}", json={"category_name": category["name"]})
 
-	# An empty body is not the same as {"category_name": null} — exclude_unset
-	# is what keeps those two apart.
 	response = client.patch(f"/api/subjects/{subject['id']}", json={})
 
 	assert response.status_code == 200

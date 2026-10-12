@@ -1,25 +1,3 @@
-"""Reading "they posted something" out of notification email.
-
-Most of the platforms worth following can't be polled: Patreon, SubscribeStar,
-Pixiv and X all need paid API access or a logged-in session. But they all send
-mail, and mail is something we can read without asking anyone's permission.
-
-Each tracker carries match rules — conditions over the sender and subject — and a
-message lands on every tracker whose rules all hold.
-
-This replaced an earlier scheme that read the platform from the sender's domain
-and the artist from its local part. That only works where the artist's name is
-inside the address, as Patreon's is; platforms that mail from one generic address
-and name the artist in the subject line could not be expressed at all.
-
-Anything no tracker claims is written to `unmatched_mail` rather than dropped,
-because a poller that silently discards what it can't match is
-indistinguishable from a platform that went quiet.
-
-Splitting `fetch_new` (talks IMAP) from `record_message` (pure database work) is
-deliberate: the matching logic is the part with the bugs in it, and it is testable
-without a mail server anywhere in sight.
-"""
 import asyncio
 import email
 import hashlib
@@ -47,11 +25,7 @@ from .models import (
 
 
 class MailError(RuntimeError):
-	"""The mailbox could not be read — network, auth, or protocol failure.
-
-	Exists so the route layer can turn a mail problem into a 502 without importing
-	imaplib to catch its exceptions.
-	"""
+	"""Mailbox unreadable: network, auth or protocol failure."""
 
 
 @dataclass(frozen=True)
@@ -64,13 +38,6 @@ class MailConfig:
 
 
 def mail_config_from_env() -> MailConfig | None:
-	"""Mailbox credentials, or None if the feature isn't configured.
-
-	Environment only, never the database. Every endpoint here is unauthenticated,
-	so a password in a table is one careless response-model field away from being
-	served to anyone who can reach the app — and the backup export is a file that
-	gets downloaded and passed around.
-	"""
 	host = os.getenv("ARTRACKER_MAIL_HOST")
 	user = os.getenv("ARTRACKER_MAIL_USER")
 	password = os.getenv("ARTRACKER_MAIL_PASSWORD")
@@ -88,7 +55,6 @@ def mail_config_from_env() -> MailConfig | None:
 
 @dataclass(frozen=True)
 class IncomingMail:
-	"""One message, reduced to the four things matching actually needs."""
 	message_id: str
 	sender: str  # bare address, lowercased — no display name
 	subject: str
@@ -97,36 +63,21 @@ class IncomingMail:
 
 @dataclass(frozen=True)
 class MailBatch:
-	"""Messages fetched after the saved IMAP cursor, plus the next cursor.
-
-	The cursor is committed in the same transaction as the resulting updates. A
-	message being read in Gmail is unrelated to whether Artracker has processed it.
-	"""
 	messages: list[IncomingMail]
 	uid_validity: str | None
 	highest_uid: int | None
 
 
 def _decode(value: str | None) -> str:
-	"""RFC 2047 header decoding.
-
-	Subject lines carrying non-ASCII arrive base64- or quoted-printable-encoded
-	(`=?utf-8?B?...?=`). Without this they'd be stored as that literal gibberish,
-	which matters here because the subject is what gets shown as the update
-	summary.
-	"""
 	if not value:
 		return ""
 	try:
 		return str(make_header(decode_header(value))).strip()
 	except (UnicodeDecodeError, LookupError, ValueError):
-		# Malformed encoding in the wild is common enough not to be worth a
-		# crash; the raw header is still more useful than nothing.
 		return value.strip()
 
 
 def parse_message(raw: bytes) -> IncomingMail | None:
-	"""Turn a raw RFC822 message into an IncomingMail, or None if unusable."""
 	message = email.message_from_bytes(raw)
 
 	_, address = parseaddr(message.get("From", ""))
@@ -134,10 +85,7 @@ def parse_message(raw: bytes) -> IncomingMail | None:
 	if "@" not in address:
 		return None
 
-	# Message-ID is the idempotency key, so something has to fill it. A content
-	# hash is a worse key than a real Message-ID — an identical resend would
-	# collide with the original — but it beats dropping the message, and mail
-	# without a Message-ID is rare enough not to optimise for.
+	# Fallback key for mail without a Message-ID.
 	message_id = (message.get("Message-ID") or "").strip()
 	if not message_id:
 		message_id = "sha256:" + hashlib.sha256(raw).hexdigest()
@@ -168,13 +116,7 @@ def fetch_new(
 	last_uid: int | None = None,
 	uid_validity: str | None = None,
 ) -> MailBatch:
-	"""Every message after the saved IMAP UID, without changing its read state.
-
-	UIDs belong to a UIDVALIDITY namespace. If the server changes that namespace,
-	the saved cursor is discarded and the mailbox is scanned again; Message-ID
-	de-duplication makes that safe. Searching all UIDs is cheap — only headers for
-	new UIDs are fetched — and avoids treating Gmail's read flag as a work queue.
-	"""
+	# UIDs are scoped to UIDVALIDITY; if it changes, rescan and let Message-ID dedupe.
 	messages: list[IncomingMail] = []
 	current_validity: str | None = None
 	highest_uid: int | None = None
@@ -195,8 +137,6 @@ def fetch_new(
 					else str(raw_validity)
 				)
 
-			# A changed UIDVALIDITY means the same integer now names a different
-			# message. Start over rather than skipping mail in the new namespace.
 			cursor = last_uid or 0
 			if uid_validity != current_validity:
 				cursor = 0
@@ -220,8 +160,6 @@ def fetch_new(
 				if status != "OK" or not payload:
 					raise MailError(f"Could not fetch message UID {uid}")
 				for part in payload:
-					# imaplib returns a mix of tuples (the body) and bare bytes
-					# (the flag echoes); only the tuples carry a message.
 					if isinstance(part, tuple) and len(part) > 1:
 						if parsed := parse_message(part[1]):
 							messages.append(parsed)
@@ -232,14 +170,7 @@ def fetch_new(
 
 
 def resolve_mail_config(db: Session) -> MailConfig | None:
-	"""The mailbox to poll: the stored account if there is one, else the environment.
-
-	Database first so the Settings page wins over whatever the container was
-	started with — otherwise saving credentials in the UI would appear to do
-	nothing on a deployment that already sets the variables. The environment stays
-	as a fallback so existing Docker setups keep working untouched, and so the app
-	can be configured before it has a database worth writing to.
-	"""
+	# A stored account wins over the environment.
 	account = db.query(MailAccount).first()
 	if account and account.host and account.username and account.password:
 		return MailConfig(
@@ -253,22 +184,10 @@ def resolve_mail_config(db: Session) -> MailConfig | None:
 
 
 def get_mail_config(db: Session = Depends(get_db)) -> MailConfig | None:
-	"""Dependency wrapper, kept separate from the fetcher.
-
-	A test can supply a dummy config without also faking the environment — the
-	route checks the config before it ever calls the fetcher, so overriding only
-	one of the two isn't enough.
-	"""
 	return resolve_mail_config(db)
 
 
 def get_mail_fetcher():
-	"""The callable the poll route uses to obtain messages.
-
-	A dependency purely so tests can override it, exactly like get_db — otherwise
-	every test of the matching logic would need a live IMAP server. Returns the
-	function rather than calling it, so the route decides when to connect.
-	"""
 	return fetch_new
 
 
@@ -292,12 +211,6 @@ def _reject(db: Session, mail: IncomingMail, reason: str) -> None:
 
 
 def rule_matches(rule: MatchRule, mail: IncomingMail) -> bool:
-	"""Whether one rule holds for one message.
-
-	Case-insensitive throughout. Sender addresses aren't case-sensitive in
-	practice, and nobody writing a subject-line rule means it to be exact about
-	capitalisation.
-	"""
 	haystack = (mail.sender if rule.field == "sender" else mail.subject or "").lower()
 	needle = (rule.value or "").lower()
 
@@ -309,22 +222,11 @@ def rule_matches(rule: MatchRule, mail: IncomingMail) -> bool:
 		return haystack == needle
 	if rule.operator == "not_equals":
 		return haystack != needle
-	# An unknown operator fails closed rather than matching everything.
 	return False
 
 
 def matching_trackers(db: Session, mail: IncomingMail) -> list[Tracker]:
-	"""Every tracker whose rules all hold for this message.
-
-	All of a tracker's rules must pass, which is what makes `not_contains` useful
-	— it narrows an otherwise broad sender rule.
-
-	**A tracker with no rules never matches.** `all([])` is True, so without the
-	`tracker.rules and` guard every rule-less tracker would claim every message
-	the moment mail started arriving. A positive rule is also required here, not
-	just at the API boundary, so a legacy negative-only tracker cannot claim nearly
-	every message in the gathering mailbox.
-	"""
+	# A tracker with no rules, or only negative ones, never matches.
 	trackers = db.query(Tracker).options(selectinload(Tracker.rules)).all()
 	return [
 		tracker
@@ -336,18 +238,7 @@ def matching_trackers(db: Session, mail: IncomingMail) -> list[Tracker]:
 
 
 def record_message(db: Session, mail: IncomingMail, seen: set[str]) -> str:
-	"""Record one message against every tracker whose rules it satisfies.
-
-	Returns "recorded", "duplicate" or "unmatched". Recording on all matches
-	rather than picking the most specific one: two artists genuinely can appear in
-	the same notification, and that's information rather than an error.
-
-	`seen` collects the refs handled in this pass and is why it's a parameter
-	rather than a local. SessionLocal sets autoflush=False, so a row added moments
-	ago is invisible to db.query() until flush — two copies of the same Message-ID
-	in one batch would both pass the existence check and then collide on the
-	unique constraint at commit, failing the whole poll.
-	"""
+	# `seen` spans the batch: autoflush=False hides rows added earlier in it.
 	if mail.message_id in seen:
 		return "duplicate"
 	seen.add(mail.message_id)
@@ -387,7 +278,6 @@ def record_message(db: Session, mail: IncomingMail, seen: set[str]) -> str:
 
 
 def record_messages(db: Session, messages: list[IncomingMail]) -> PollOutcome:
-	"""Stage a batch in the current transaction."""
 	outcome = PollOutcome()
 	seen: set[str] = set()
 
@@ -404,7 +294,6 @@ def record_messages(db: Session, messages: list[IncomingMail]) -> PollOutcome:
 
 
 def record_batch(db: Session, schedule: PollSchedule, batch: MailBatch) -> PollOutcome:
-	"""Stage messages and their IMAP cursor in the current transaction."""
 	outcome = record_messages(db, batch.messages)
 
 	if schedule.uid_validity != batch.uid_validity:
@@ -416,28 +305,17 @@ def record_batch(db: Session, schedule: PollSchedule, batch: MailBatch) -> PollO
 	return outcome
 
 
-# ---- the background poller --------------------------------------------------
 
-# How often the loop wakes to ask "is a run due yet". Deliberately much shorter
-# than any allowed interval: the loop checks whether enough time has passed rather
-# than sleeping for the whole interval, so changing the setting takes effect
-# within a minute instead of after the current sleep finishes, and a restart
-# doesn't reset the clock.
+# The loop checks whether a run is due rather than sleeping the whole interval.
 TICK_SECONDS = 60
 
-# Nothing shorter is accepted. IMAP servers rate-limit, most notification mail
-# arrives in bursts anyway, and a tighter loop buys nothing but bans.
 MIN_INTERVAL_MINUTES = 5
 
 logger = logging.getLogger(__name__)
 
 
 def run_one_poll(db: Session, schedule: PollSchedule) -> str:
-	"""One pass, returning the one-line summary stored on the schedule.
-
-	Synchronous and blocking — imaplib is — so callers on the event loop must run
-	it in a thread.
-	"""
+	# Blocking (imaplib); run it in a thread from async code.
 	config = resolve_mail_config(db)
 	if config is None:
 		return "No mailbox is configured"
@@ -461,24 +339,13 @@ def _due(schedule: PollSchedule, now: datetime) -> bool:
 
 
 def poll_if_due(session_factory) -> str | None:
-	"""Run a pass if the schedule says one is owed. Returns its summary, or None.
-
-	Takes a session factory and opens its own session, which routes are forbidden
-	from doing — see the note in database.py. The reasoning there is about request
-	handlers, where a hand-rolled session both closes before serialization and
-	side-steps the dependency override that points tests at a temporary database.
-	Neither applies to a background task: there is no response to serialize and no
-	request to override, and it cannot borrow a session from a request that isn't
-	happening.
-	"""
+	# Opens its own session: there's no request to borrow one from.
 	with session_factory() as db:
 		schedule = db.query(PollSchedule).first()
 		if schedule is None or not _due(schedule, utcnow()):
 			return None
 
-		# Stamped BEFORE the work, not after. A poll that hangs for ten minutes
-		# would otherwise still look overdue on every tick, and each tick would
-		# start another one on top of it.
+		# Stamped before the work so a hung poll isn't restarted every tick.
 		schedule.last_run_at = utcnow()
 		db.commit()
 
@@ -487,9 +354,7 @@ def poll_if_due(session_factory) -> str | None:
 		except MailError as error:
 			result = f"Failed: {error}"
 		except Exception as error:  # noqa: BLE001 - see below
-			# Deliberately broad. This runs in a loop with nothing above it to
-			# catch anything, so an unexpected failure has to be recorded and
-			# swallowed or the poller dies silently and never runs again.
+			# Broad on purpose: nothing above this loop would catch it.
 			logger.exception("Scheduled mail poll failed")
 			result = f"Failed: {error}"
 
@@ -499,17 +364,12 @@ def poll_if_due(session_factory) -> str | None:
 
 
 async def poll_forever(session_factory) -> None:
-	"""The loop itself. Cancelled on shutdown by the lifespan handler."""
 	while True:
 		try:
-			# to_thread because the poll is blocking IMAP and database work; run
-			# inline it would stall every request for the duration.
 			await asyncio.to_thread(poll_if_due, session_factory)
 		except asyncio.CancelledError:
 			raise
 		except Exception:  # noqa: BLE001
-			# poll_if_due already swallows its own failures; this is the last
-			# resort for anything raised outside it, so the loop survives.
 			logger.exception("Mail poller tick failed")
 
 		await asyncio.sleep(TICK_SECONDS)
