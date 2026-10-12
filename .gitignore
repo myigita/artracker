@@ -22,8 +22,10 @@ dist/
 .idea/
 .DS_Store
 
-# Claude Code local settings and dev-server launcher
+# AI assistant config and notes (Claude Code, Codex) — local only
 .claude/
-
-# Local-only project notes
+.codex/
+.mcp.json
 CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
