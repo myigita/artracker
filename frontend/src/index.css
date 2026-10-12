@@ -64,15 +64,14 @@
   color-scheme: dark;
 }
 
-/* Blue carries the accent so Tailwind's red stays free to mean "danger". */
 :root[data-theme='bauhaus'] {
   --text: #57514a;
   --text-h: #1d1b18;
   --bg: #f2ead7;
   --border: #d8ccb0;
-  --accent: #235f8c;
-  --accent-bg: #efd9a3;
-  --accent-border: #d9a21f;
+  --accent: #b83418;
+  --accent-bg: #efcba8;
+  --accent-border: #e8833a;
   --shadow: #1d1b18 3px 3px 0 0;
   color-scheme: light;
 }

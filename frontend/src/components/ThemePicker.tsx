@@ -1,10 +1,10 @@
 import { useState } from 'react';
 
 const THEMES = [
-	{ value: 'system', label: 'System', hint: 'Light or dark, following your device.' },
-	{ value: 'light', label: 'Light', hint: null },
-	{ value: 'dark', label: 'Dark', hint: null },
-	{ value: 'bauhaus', label: 'Bauhaus', hint: 'Off-white paper, ink, and primary blue and yellow.' },
+	{ value: 'system', label: 'System' },
+	{ value: 'light', label: 'Light' },
+	{ value: 'dark', label: 'Dark' },
+	{ value: 'bauhaus', label: 'Bauhaus' },
 ] as const;
 
 type Theme = (typeof THEMES)[number]['value'];
@@ -40,12 +40,11 @@ export default function ThemePicker() {
 			<h3 id="theme-heading" className="font-semibold text-[var(--text-h)]">
 				Theme
 			</h3>
-			<p className="mt-1 text-sm text-[var(--text)]">Saved in this browser only.</p>
 			<div role="radiogroup" aria-labelledby="theme-heading" className="mt-3 flex flex-col gap-2">
-				{THEMES.map(({ value, label, hint }) => (
+				{THEMES.map(({ value, label }) => (
 					<label
 						key={value}
-						className="flex cursor-pointer items-start gap-2 text-sm text-[var(--text-h)]"
+						className="flex cursor-pointer items-center gap-2 text-sm text-[var(--text-h)]"
 					>
 						<input
 							type="radio"
@@ -55,12 +54,9 @@ export default function ThemePicker() {
 								setTheme(value);
 								applyTheme(value);
 							}}
-							className="mt-1 cursor-pointer accent-[var(--accent)]"
+							className="cursor-pointer accent-[var(--accent)]"
 						/>
-						<span>
-							{label}
-							{hint && <span className="block text-xs text-[var(--text)]">{hint}</span>}
-						</span>
+						{label}
 					</label>
 				))}
 			</div>
