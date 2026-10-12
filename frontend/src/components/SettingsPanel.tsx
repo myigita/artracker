@@ -13,6 +13,7 @@ import {
 import MailboxForm from './MailboxForm';
 import PollScheduleForm from './PollScheduleForm';
 import SettingsGroup from './SettingsGroup';
+import ThemePicker from './ThemePicker';
 import Collapse, { Chevron } from './Collapse';
 
 type Props = {
@@ -189,6 +190,10 @@ export default function SettingsPanel({ onPolled }: Props) {
 						)}
 					</Collapse>
 				</section>
+			</SettingsGroup>
+
+			<SettingsGroup title="Appearance" description="How Artracker looks on this device.">
+				<ThemePicker />
 			</SettingsGroup>
 		</div>
 	);
