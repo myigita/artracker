@@ -151,9 +151,18 @@ export default function TrackerPanel() {
 		<button
 			type="button"
 			onClick={() => openFormAndClearNotice(addFormFor[tab])}
-			className="cursor-pointer whitespace-nowrap bg-[var(--accent)] px-3 text-lg font-bold uppercase text-white sm:px-4 transition-opacity hover:opacity-90"
+			className="grid cursor-pointer place-items-center whitespace-nowrap bg-[var(--accent)] px-3 text-lg font-bold uppercase text-white transition-opacity hover:opacity-90 sm:px-4"
 		>
-			{addLabel[tab]}
+			{/* Every label shares one grid cell, so the button is always as wide as the longest. */}
+			{Object.values(addLabel).filter(Boolean).map((label) => (
+				<span
+					key={label}
+					aria-hidden={label !== addLabel[tab]}
+					className={`col-start-1 row-start-1 ${label === addLabel[tab] ? '' : 'invisible'}`}
+				>
+					{label}
+				</span>
+			))}
 		</button>
 	);
 

@@ -24,8 +24,8 @@ export default function TitleBar<T extends string>({
 	const actionMeasureRef = useRef<HTMLDivElement>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
 	const triggerRef = useRef<HTMLButtonElement>(null);
-	// Kept after the action disappears, so switching to a tab without one doesn't flip the layout.
-	const actionWidthRef = useRef(0);
+	// Kept after the action disappears, so its cell holds its place on tabs without one.
+	const [actionWidth, setActionWidth] = useState(0);
 	const [asMenu, setAsMenu] = useState(false);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const hasAction = Boolean(action);
@@ -38,18 +38,15 @@ export default function TitleBar<T extends string>({
 		const measure = measureRef.current;
 		if (!bar || !logo || !measure) return;
 		const check = () => {
-			actionWidthRef.current = Math.max(
-				actionWidthRef.current,
-				actionMeasureRef.current?.offsetWidth ?? 0,
-			);
-			const beside = bar.clientWidth - logo.offsetWidth - actionWidthRef.current;
-			setAsMenu(measure.scrollWidth > beside);
+			const width = Math.max(actionWidth, actionMeasureRef.current?.offsetWidth ?? 0);
+			setActionWidth(width);
+			setAsMenu(measure.scrollWidth > bar.clientWidth - logo.offsetWidth - width);
 		};
 		const observer = new ResizeObserver(check);
 		for (const el of [bar, logo, measure, actionMeasureRef.current]) if (el) observer.observe(el);
 		check();
 		return () => observer.disconnect();
-	}, [hasAction]);
+	}, [hasAction, actionWidth]);
 
 	useEffect(() => {
 		if (!asMenu) setMenuOpen(false);
@@ -196,17 +193,20 @@ export default function TitleBar<T extends string>({
 					)}
 				</div>
 
-				{action && (
-					<div
-						className={`flex border-[var(--frame)] ${
-							asMenu
-								? 'basis-full border-t-[3px] *:flex-1 *:py-2.5'
-								: 'shrink-0 border-l-[3px]'
-						}`}
-					>
-						{action}
-					</div>
-				)}
+				{asMenu
+					? action && (
+							<div className="flex basis-full border-t-[3px] border-[var(--frame)] *:flex-1 *:py-2.5">
+								{action}
+							</div>
+						)
+					: actionWidth > 0 && (
+							<div
+								style={{ width: actionWidth }}
+								className="flex shrink-0 border-l-[3px] border-[var(--frame)] *:flex-1"
+							>
+								{action}
+							</div>
+						)}
 			</div>
 		</header>
 	);
