@@ -7,16 +7,23 @@
   --border: #e5e4e7;
   /* The thick 3px frames around cards, tabs and controls. */
   --frame: #08060d;
-  --accent: #9442d7;
-  --accent-bg: rgba(148, 66, 215, 0.1);
-  --accent-border: rgba(148, 66, 215, 0.5);
+  /* The accent picker sets --accent-custom inline on <html>; without it each theme uses its default. */
+  --accent-default: oklch(0.53 0.17 303);
+  --accent: var(--accent-custom, var(--accent-default));
+  --accent-bg-alpha: 10%;
+  --accent-border-alpha: 50%;
+  --accent-bg: color-mix(in oklab, var(--accent) var(--accent-bg-alpha), transparent);
+  --accent-border: color-mix(in oklab, var(--accent) var(--accent-border-alpha), transparent);
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-  --logo-1: #5b2a91;
-  --logo-2: #6f33b0;
-  --logo-3: #8440c9;
-  --logo-4: #9a56dc;
-  --logo-5: #b06fe6;
+  /* The logo keeps the accent's hue and chroma and steps through these lightnesses. */
+  --logo-l: 0.38;
+  --logo-step: 0.07;
+  --logo-1: oklch(from var(--accent) var(--logo-l) c h);
+  --logo-2: oklch(from var(--accent) calc(var(--logo-l) + var(--logo-step)) c h);
+  --logo-3: oklch(from var(--accent) calc(var(--logo-l) + 2 * var(--logo-step)) c h);
+  --logo-4: oklch(from var(--accent) calc(var(--logo-l) + 3 * var(--logo-step)) c h);
+  --logo-5: oklch(from var(--accent) calc(var(--logo-l) + 4 * var(--logo-step)) c h);
 
   /* Bundled from npm, so there is still no web font request. */
   --sans:
@@ -47,14 +54,11 @@
     --bg: #0e0f13;
     --border: #2e303a;
     --frame: #80858f;
-    --accent: #9d55e0;
-    --accent-bg: rgba(157, 85, 224, 0.18);
-    --accent-border: rgba(157, 85, 224, 0.55);
-    --logo-1: #9157dd;
-    --logo-2: #a068e8;
-    --logo-3: #b281ef;
-    --logo-4: #c49cf5;
-    --logo-5: #d6b8fa;
+    --accent-default: oklch(0.6 0.16 303);
+    --accent-bg-alpha: 18%;
+    --accent-border-alpha: 55%;
+    --logo-l: 0.58;
+    --logo-step: 0.065;
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
   }
@@ -70,14 +74,11 @@
   --bg: #0e0f13;
   --border: #2e303a;
   --frame: #80858f;
-  --accent: #9d55e0;
-  --accent-bg: rgba(157, 85, 224, 0.18);
-  --accent-border: rgba(157, 85, 224, 0.55);
-  --logo-1: #9157dd;
-  --logo-2: #a068e8;
-  --logo-3: #b281ef;
-  --logo-4: #c49cf5;
-  --logo-5: #d6b8fa;
+  --accent-default: oklch(0.6 0.16 303);
+  --accent-bg-alpha: 18%;
+  --accent-border-alpha: 55%;
+  --logo-l: 0.58;
+  --logo-step: 0.065;
   --shadow:
     rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
   color-scheme: dark;

@@ -9,6 +9,8 @@
       try {
         const theme = localStorage.getItem('theme');
         if (['light', 'dark', 'bauhaus'].includes(theme)) document.documentElement.dataset.theme = theme;
+        const accent = localStorage.getItem('accent');
+        if (/^#[0-9a-f]{6}$/i.test(accent)) document.documentElement.style.setProperty('--accent-custom', accent);
       } catch {}
     </script>
   </head>
