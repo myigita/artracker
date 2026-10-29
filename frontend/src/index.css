@@ -12,11 +12,11 @@
   --accent-border: rgba(148, 66, 215, 0.5);
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-  --logo-1: #c8361b;
-  --logo-2: #d46a12;
-  --logo-3: #b8860b;
-  --logo-4: #3f8a3a;
-  --logo-5: #2a64a8;
+  --logo-1: #5b2a91;
+  --logo-2: #6f33b0;
+  --logo-3: #8440c9;
+  --logo-4: #9a56dc;
+  --logo-5: #b06fe6;
 
   /* Bundled from npm, so there is still no web font request. */
   --sans:
@@ -50,11 +50,11 @@
     --accent: #9d55e0;
     --accent-bg: rgba(157, 85, 224, 0.18);
     --accent-border: rgba(157, 85, 224, 0.55);
-    --logo-1: #f0644a;
-    --logo-2: #f39a4a;
-    --logo-3: #f2c14e;
-    --logo-4: #6fbf5f;
-    --logo-5: #5c9be0;
+    --logo-1: #9157dd;
+    --logo-2: #a068e8;
+    --logo-3: #b281ef;
+    --logo-4: #c49cf5;
+    --logo-5: #d6b8fa;
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
   }
@@ -73,11 +73,11 @@
   --accent: #9d55e0;
   --accent-bg: rgba(157, 85, 224, 0.18);
   --accent-border: rgba(157, 85, 224, 0.55);
-  --logo-1: #f0644a;
-  --logo-2: #f39a4a;
-  --logo-3: #f2c14e;
-  --logo-4: #6fbf5f;
-  --logo-5: #5c9be0;
+  --logo-1: #9157dd;
+  --logo-2: #a068e8;
+  --logo-3: #b281ef;
+  --logo-4: #c49cf5;
+  --logo-5: #d6b8fa;
   --shadow:
     rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
   color-scheme: dark;
