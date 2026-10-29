@@ -11,7 +11,7 @@ type Props = {
 };
 
 const inputClass =
-	'w-full rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm ' +
+	'w-full border-[3px] border-[var(--frame)] bg-transparent px-3 py-2 text-sm ' +
 	'text-[var(--text-h)] outline-none transition-colors focus:border-[var(--accent-border)] ' +
 	'disabled:opacity-40';
 
@@ -81,7 +81,7 @@ export default function MailboxForm({ account, onSave, onSaved, onClear, onClear
 			</p>
 
 			{fromEnvironment && (
-				<p className="mt-2 rounded-md border border-[var(--border)] px-3 py-2 text-xs text-[var(--text)]">
+				<p className="mt-2 border-[3px] border-[var(--frame)] px-3 py-2 text-xs text-[var(--text)]">
 					Currently coming from the <code>ARTRACKER_MAIL_*</code> environment
 					variables. Saving here stores a mailbox in the database, which takes
 					precedence from then on.
@@ -177,7 +177,7 @@ export default function MailboxForm({ account, onSave, onSaved, onClear, onClear
 						type="submit"
 						disabled={saving || !host.trim() || !username.trim() || needsPassword}
 						title={needsPassword ? 'A password is required the first time' : undefined}
-						className="cursor-pointer rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+						className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 					>
 						{saving ? 'Saving…' : 'Save mailbox'}
 					</button>
@@ -186,7 +186,7 @@ export default function MailboxForm({ account, onSave, onSaved, onClear, onClear
 						<button
 							type="button"
 							onClick={handleClear}
-							className="cursor-pointer rounded-md border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)] transition-colors hover:border-red-500 hover:text-red-500"
+							className="cursor-pointer border-[3px] border-[var(--frame)] px-3 py-2 text-sm text-[var(--text)] transition-colors hover:border-red-500 hover:text-red-500"
 						>
 							Forget it
 						</button>
@@ -198,7 +198,7 @@ export default function MailboxForm({ account, onSave, onSaved, onClear, onClear
 				</div>
 
 				{error && (
-					<p className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-[var(--text-h)]">
+					<p className="border-[3px] border-red-500 bg-red-500/10 px-3 py-2 text-sm text-[var(--text-h)]">
 						{error}
 					</p>
 				)}

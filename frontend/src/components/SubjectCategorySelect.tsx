@@ -42,10 +42,10 @@ export default function SubjectCategorySelect({ subject, categories, onChanged }
 						? 'Add a category first'
 						: undefined
 			}
-			className={`w-28 shrink-0 truncate rounded-md border bg-transparent px-2 py-1 text-xs outline-none transition-colors focus:border-[var(--accent-border)] disabled:opacity-40 sm:w-36 ${
+			className={`w-28 shrink-0 truncate border-[3px] bg-transparent px-2 py-1 text-xs outline-none transition-colors focus:border-[var(--accent-border)] disabled:opacity-40 sm:w-36 ${
 				failed
 					? 'border-red-500 text-red-500'
-					: 'border-[var(--border)] text-[var(--text)]'
+					: 'border-[var(--frame)] text-[var(--text)]'
 			}`}
 		>
 			<option value={NONE}>No category</option>

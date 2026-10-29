@@ -85,7 +85,7 @@ export default function PollScheduleForm({ schedule, onSaved }: Props) {
 							);
 						}}
 						aria-label="How often to check"
-						className="cursor-pointer rounded-md border border-[var(--border)] bg-transparent px-2 py-1 text-sm text-[var(--text-h)] outline-none transition-colors focus:border-[var(--accent-border)] disabled:opacity-40"
+						className="cursor-pointer border-[3px] border-[var(--frame)] bg-transparent px-2 py-1 text-sm text-[var(--text-h)] outline-none transition-colors focus:border-[var(--accent-border)] disabled:opacity-40"
 					>
 						{INTERVALS.map((minutes) => (
 							<option key={minutes} value={minutes}>
@@ -112,7 +112,7 @@ export default function PollScheduleForm({ schedule, onSaved }: Props) {
 			)}
 
 			{error && (
-				<p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-[var(--text-h)]">
+				<p className="mt-3 border-[3px] border-red-500 bg-red-500/10 px-3 py-2 text-sm text-[var(--text-h)]">
 					{error}
 				</p>
 			)}

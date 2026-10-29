@@ -18,30 +18,42 @@ export default function TitleBar<T extends string>({
 	onSelect,
 	action,
 }: Props<T>) {
-	const slotRef = useRef<HTMLDivElement>(null);
+	const barRef = useRef<HTMLDivElement>(null);
+	const logoRef = useRef<HTMLSpanElement>(null);
 	const measureRef = useRef<HTMLDivElement>(null);
+	const actionMeasureRef = useRef<HTMLDivElement>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
 	const triggerRef = useRef<HTMLButtonElement>(null);
-	const [collapsed, setCollapsed] = useState(false);
+	// Kept after the action disappears, so switching to a tab without one doesn't flip the layout.
+	const actionWidthRef = useRef(0);
+	const [asMenu, setAsMenu] = useState(false);
 	const [menuOpen, setMenuOpen] = useState(false);
+	const hasAction = Boolean(action);
 
-	// An invisible copy of the full tab row is measured against the space the
-	// real one would get, so the switch tracks actual fit rather than a breakpoint.
+	// Invisible copies of the tab row and the action are measured at their natural
+	// width, so the result doesn't depend on which layout is currently showing.
 	useLayoutEffect(() => {
-		const slot = slotRef.current;
+		const bar = barRef.current;
+		const logo = logoRef.current;
 		const measure = measureRef.current;
-		if (!slot || !measure) return;
-		const check = () => setCollapsed(measure.scrollWidth > slot.clientWidth);
+		if (!bar || !logo || !measure) return;
+		const check = () => {
+			actionWidthRef.current = Math.max(
+				actionWidthRef.current,
+				actionMeasureRef.current?.offsetWidth ?? 0,
+			);
+			const beside = bar.clientWidth - logo.offsetWidth - actionWidthRef.current;
+			setAsMenu(measure.scrollWidth > beside);
+		};
 		const observer = new ResizeObserver(check);
-		observer.observe(slot);
-		observer.observe(measure);
+		for (const el of [bar, logo, measure, actionMeasureRef.current]) if (el) observer.observe(el);
 		check();
 		return () => observer.disconnect();
-	}, []);
+	}, [hasAction]);
 
 	useEffect(() => {
-		if (!collapsed) setMenuOpen(false);
-	}, [collapsed]);
+		if (!asMenu) setMenuOpen(false);
+	}, [asMenu]);
 
 	useEffect(() => {
 		if (!menuOpen) return;
@@ -66,25 +78,33 @@ export default function TitleBar<T extends string>({
 		return (
 			<>
 				{label}
-				{counts[id] !== null && <span className="text-xs font-normal"> ({counts[id]})</span>}
+				{counts[id] !== null && <span className="ml-1 text-xs font-normal">({counts[id]})</span>}
 			</>
 		);
 	}
 
 	function tabClass(id: T) {
-		return `cursor-pointer whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
+		return `flex cursor-pointer items-center whitespace-nowrap px-2.5 py-2.5 text-lg font-bold uppercase transition-colors sm:px-3 ${
 			active === id
 				? 'bg-[var(--accent-bg)] text-[var(--text-h)]'
 				: 'text-[var(--text)] hover:text-[var(--text-h)]'
 		}`;
 	}
 
+	const sectionsClass = 'divide-x-[3px] divide-[var(--frame)]';
+
 	const activeTab = tabs.find((tab) => tab.id === active);
 
 	return (
-		<header className="z-10 border-b border-[var(--border)] bg-[var(--bg)] md:sticky md:top-0">
-			<div className="mx-auto flex max-w-4xl items-center gap-3 px-6 py-3">
-				<span className="shrink-0 text-lg font-bold tracking-tight text-[var(--text-h)]">
+		<header className="z-10 bg-[var(--bg)] px-4 pt-4 sm:px-6 sm:pt-6 md:sticky md:top-0">
+			<div
+				ref={barRef}
+				className="mx-auto flex max-w-7xl flex-wrap items-stretch border-[3px] border-[var(--frame)]"
+			>
+				<span
+					ref={logoRef}
+					className="flex shrink-0 items-center border-r-[3px] border-[var(--frame)] px-3 py-2.5 text-lg font-bold uppercase tracking-tight text-[var(--text-h)] sm:px-4"
+				>
 					<span className="sr-only">{title}</span>
 					<span aria-hidden="true">
 						{[...title.slice(0, 5)].map((letter, i) => (
@@ -96,22 +116,28 @@ export default function TitleBar<T extends string>({
 					</span>
 				</span>
 
-				<div ref={slotRef} className="relative min-w-0 flex-1">
+				<div className="relative flex min-w-0 flex-1">
 					<div
 						aria-hidden="true"
+						inert
 						className="pointer-events-none invisible absolute inset-x-0 top-0 h-0 overflow-hidden"
 					>
-						<div ref={measureRef} className="flex w-max gap-1">
+						<div ref={measureRef} className={`flex w-max ${sectionsClass}`}>
 							{tabs.map(({ id, label }) => (
 								<span key={id} className={tabClass(id)}>
 									{tabContent(id, label)}
 								</span>
 							))}
 						</div>
+						{action && (
+							<div ref={actionMeasureRef} className="flex w-max border-l-[3px]">
+								{action}
+							</div>
+						)}
 					</div>
 
-					{collapsed ? (
-						<div ref={menuRef} className="relative w-fit max-w-full">
+					{asMenu ? (
+						<div ref={menuRef} className="relative flex min-w-0 flex-1">
 							<button
 								ref={triggerRef}
 								type="button"
@@ -119,9 +145,11 @@ export default function TitleBar<T extends string>({
 								aria-expanded={menuOpen}
 								aria-controls="tab-menu"
 								aria-label={`Section: ${activeTab?.label ?? ''}`}
-								className={`${tabClass(active)} flex max-w-full items-center gap-1`}
+								className={`${tabClass(active)} min-w-0 flex-1 justify-between gap-1`}
 							>
-								<span className="truncate">{activeTab?.label}</span>
+								<span className="truncate">
+									{activeTab && tabContent(activeTab.id, activeTab.label)}
+								</span>
 								<Chevron open={menuOpen} />
 							</button>
 							{menuOpen && (
@@ -129,7 +157,7 @@ export default function TitleBar<T extends string>({
 									id="tab-menu"
 									role="tablist"
 									aria-orientation="vertical"
-									className="absolute left-0 top-full z-20 mt-1 flex min-w-40 flex-col gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--bg)] p-1 shadow-lg"
+									className="absolute -inset-x-[3px] top-full z-20 mt-[3px] flex flex-col divide-y-[3px] divide-[var(--frame)] border-[3px] border-[var(--frame)] bg-[var(--bg)]"
 								>
 									{tabs.map(({ id, label }) => (
 										<button
@@ -151,7 +179,7 @@ export default function TitleBar<T extends string>({
 							)}
 						</div>
 					) : (
-						<nav className="flex gap-1" role="tablist">
+						<nav className={`flex flex-1 ${sectionsClass}`} role="tablist">
 							{tabs.map(({ id, label }) => (
 								<button
 									key={id}
@@ -159,7 +187,7 @@ export default function TitleBar<T extends string>({
 									role="tab"
 									aria-selected={active === id}
 									onClick={() => onSelect(id)}
-									className={tabClass(id)}
+									className={`${tabClass(id)} flex-1 justify-center`}
 								>
 									{tabContent(id, label)}
 								</button>
@@ -168,7 +196,17 @@ export default function TitleBar<T extends string>({
 					)}
 				</div>
 
-				{action && <div className="shrink-0">{action}</div>}
+				{action && (
+					<div
+						className={`flex border-[var(--frame)] ${
+							asMenu
+								? 'basis-full border-t-[3px] *:flex-1 *:py-2.5'
+								: 'shrink-0 border-l-[3px]'
+						}`}
+					>
+						{action}
+					</div>
+				)}
 			</div>
 		</header>
 	);

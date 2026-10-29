@@ -99,13 +99,13 @@ export default function SettingsPanel({ onPolled }: Props) {
 						type="button"
 						onClick={handlePoll}
 						disabled={polling}
-						className="mt-3 cursor-pointer rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+						className="mt-3 cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 					>
 						{polling ? 'Checking…' : 'Check mail now'}
 					</button>
 
 					{result && (
-						<p className="mt-3 rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-2 text-sm text-[var(--text-h)]">
+						<p className="mt-3 border-[3px] border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-2 text-sm text-[var(--text-h)]">
 							Read {result.fetched} message{result.fetched === 1 ? '' : 's'}:{' '}
 							{result.recorded} recorded, {result.duplicates} already seen,{' '}
 							{result.unmatched} unmatched.
@@ -113,7 +113,7 @@ export default function SettingsPanel({ onPolled }: Props) {
 					)}
 
 					{error && (
-						<p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-[var(--text-h)]">
+						<p className="mt-3 border-[3px] border-red-500 bg-red-500/10 px-3 py-2 text-sm text-[var(--text-h)]">
 							{error}
 						</p>
 					)}
@@ -143,7 +143,7 @@ export default function SettingsPanel({ onPolled }: Props) {
 
 					<Collapse open={showUnmatched} id="unmatched-mail-list">
 						{unmatched.length === 0 ? (
-							<p className="mt-3 rounded-lg border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--text)]">
+							<p className="mt-3 border-[3px] border-dashed border-[var(--frame)] p-6 text-center text-sm text-[var(--text)]">
 								Nothing unmatched.
 							</p>
 						) : (
@@ -151,7 +151,7 @@ export default function SettingsPanel({ onPolled }: Props) {
 								{unmatched.map((item) => (
 									<div
 										key={item.id}
-										className="rounded-lg border border-[var(--border)] px-4 py-3"
+										className="border-[3px] border-[var(--frame)] px-4 py-3"
 									>
 										<div className="flex items-baseline gap-3">
 											<span className="min-w-0 flex-1 truncate font-medium text-[var(--text-h)]">

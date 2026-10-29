@@ -21,7 +21,7 @@ const OPERATORS: { value: MatchOperator; label: string }[] = [
 ];
 
 const selectClass =
-	'shrink-0 rounded-md border border-[var(--border)] bg-transparent px-2 py-1.5 text-xs ' +
+	'shrink-0 border-[3px] border-[var(--frame)] bg-transparent px-2 py-1.5 text-xs ' +
 	'text-[var(--text-h)] outline-none transition-colors focus:border-[var(--accent-border)] ' +
 	'disabled:opacity-40';
 
@@ -87,7 +87,7 @@ export default function MatchRulesEditor({ rules, onChange, disabled, valueHint 
 							onChange={(e) => update(index, { value: e.target.value })}
 							placeholder={valueHint || (rule.field === 'sender' ? 'artist handle' : 'artist name')}
 							aria-label={`Rule ${index + 1} value`}
-							className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-transparent px-2 py-1.5 text-xs text-[var(--text-h)] outline-none transition-colors focus:border-[var(--accent-border)] disabled:opacity-40"
+							className="min-w-0 flex-1 border-[3px] border-[var(--frame)] bg-transparent px-2 py-1.5 text-xs text-[var(--text-h)] outline-none transition-colors focus:border-[var(--accent-border)] disabled:opacity-40"
 						/>
 
 						<button
@@ -117,7 +117,7 @@ export default function MatchRulesEditor({ rules, onChange, disabled, valueHint 
 						type="button"
 						onClick={add}
 						disabled={disabled}
-						className="cursor-pointer rounded-md border border-dashed border-[var(--border)] px-2.5 py-1 text-xs text-[var(--text)] transition-colors hover:border-[var(--accent-border)] hover:text-[var(--text-h)] disabled:opacity-40"
+						className="cursor-pointer border-[3px] border-dashed border-[var(--frame)] px-2.5 py-1 text-xs text-[var(--text)] transition-colors hover:border-[var(--accent-border)] hover:text-[var(--text-h)] disabled:opacity-40"
 					>
 						+ Add rule
 					</button>

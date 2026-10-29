@@ -7,7 +7,7 @@ type Props = {
 };
 
 const buttonClass =
-	'cursor-pointer rounded-md px-3 py-2 text-sm font-medium transition-opacity ' +
+	'cursor-pointer border-[3px] border-[var(--frame)] px-3 py-2 text-sm font-medium transition-opacity ' +
 	'hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40';
 
 function today() {
@@ -94,7 +94,7 @@ export default function BackupPanel({ onImported }: Props) {
 
 	return (
 		<div className="flex flex-col gap-4">
-			<section className="rounded-lg border border-[var(--border)] p-4">
+			<section className="border-[3px] border-[var(--frame)] p-4">
 				<h3 className="font-semibold text-[var(--text-h)]">Export</h3>
 				<p className="mt-1 text-sm text-[var(--text)]">
 					Downloads everything — trackers, subjects, platforms and categories —
@@ -110,7 +110,7 @@ export default function BackupPanel({ onImported }: Props) {
 				</button>
 			</section>
 
-			<section className="rounded-lg border border-[var(--border)] p-4">
+			<section className="border-[3px] border-[var(--frame)] p-4">
 				<h3 className="font-semibold text-[var(--text-h)]">Import</h3>
 
 				<input
@@ -119,7 +119,7 @@ export default function BackupPanel({ onImported }: Props) {
 					accept="application/json,.json"
 					onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
 					aria-label="Backup file to import"
-					className="mt-3 block w-full text-sm text-[var(--text)] file:mr-3 file:cursor-pointer file:rounded-md file:border file:border-[var(--border)] file:bg-transparent file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-[var(--text-h)] hover:file:border-[var(--accent-border)]"
+					className="mt-3 block w-full text-sm text-[var(--text)] file:mr-3 file:cursor-pointer file:border-[3px] file:border-[var(--frame)] file:bg-transparent file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-[var(--text-h)] hover:file:border-[var(--accent-border)]"
 				/>
 
 				<fieldset className="mt-4">
@@ -159,7 +159,7 @@ export default function BackupPanel({ onImported }: Props) {
 				</fieldset>
 
 				{confirming && (
-					<p className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-[var(--text-h)]">
+					<p className="mt-4 border-[3px] border-red-500 bg-red-500/10 px-3 py-2 text-sm text-[var(--text-h)]">
 						This deletes every tracker, subject, platform and category currently
 						in the app, then restores the file. Click Replace again to go ahead.
 					</p>
@@ -187,7 +187,7 @@ export default function BackupPanel({ onImported }: Props) {
 				{error && <p className="mt-3 text-sm text-red-500">{error}</p>}
 
 				{result && (
-					<p className="mt-3 rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-2 text-sm text-[var(--text-h)]">
+					<p className="mt-3 border-[3px] border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-2 text-sm text-[var(--text-h)]">
 						Imported in {result.mode} mode: {result.trackers_added} tracker(s),{' '}
 						{result.subjects_added} subject(s), {result.platforms_added}{' '}
 						platform(s), {result.categories_added} category(ies) added

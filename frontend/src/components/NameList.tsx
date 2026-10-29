@@ -70,7 +70,7 @@ export default function NameList<T extends NameItem>({
 
 	if (items.length === 0) {
 		return (
-			<p className="rounded-lg border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--text)]">
+			<p className="border-[3px] border-dashed border-[var(--frame)] p-8 text-center text-sm text-[var(--text)]">
 				No {plural} yet.
 			</p>
 		);
@@ -87,7 +87,7 @@ export default function NameList<T extends NameItem>({
 					return (
 							<div
 								key={item.id}
-								className="rounded-lg border border-[var(--border)]"
+								className="border-[3px] border-[var(--frame)]"
 							>
 								<div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
 									{renderExpanded && (

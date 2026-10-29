@@ -5,21 +5,22 @@
   --text-h: #08060d;
   --bg: #fff;
   --border: #e5e4e7;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
+  /* The thick 3px frames around cards, tabs and controls. */
+  --frame: #08060d;
+  --accent: #9442d7;
+  --accent-bg: rgba(148, 66, 215, 0.1);
+  --accent-border: rgba(148, 66, 215, 0.5);
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-  /* currentColor in `color` means "inherit", so the logo is plain unless a theme colours it. */
-  --logo-1: currentColor;
-  --logo-2: currentColor;
-  --logo-3: currentColor;
-  --logo-4: currentColor;
-  --logo-5: currentColor;
+  --logo-1: #c8361b;
+  --logo-2: #d46a12;
+  --logo-3: #b8860b;
+  --logo-4: #3f8a3a;
+  --logo-5: #2a64a8;
 
-  /* Locally installed fonts only; no web font request. */
+  /* Bundled from npm, so there is still no web font request. */
   --sans:
-    Inter, 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Space Grotesk Variable', system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
@@ -43,11 +44,17 @@
   :root:not([data-theme]) {
     --text: #9ca3af;
     --text-h: #f3f4f6;
-    --bg: #16171d;
+    --bg: #0e0f13;
     --border: #2e303a;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
+    --frame: #80858f;
+    --accent: #9d55e0;
+    --accent-bg: rgba(157, 85, 224, 0.18);
+    --accent-border: rgba(157, 85, 224, 0.55);
+    --logo-1: #f0644a;
+    --logo-2: #f39a4a;
+    --logo-3: #f2c14e;
+    --logo-4: #6fbf5f;
+    --logo-5: #5c9be0;
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
   }
@@ -60,11 +67,17 @@
 :root[data-theme='dark'] {
   --text: #9ca3af;
   --text-h: #f3f4f6;
-  --bg: #16171d;
+  --bg: #0e0f13;
   --border: #2e303a;
-  --accent: #c084fc;
-  --accent-bg: rgba(192, 132, 252, 0.15);
-  --accent-border: rgba(192, 132, 252, 0.5);
+  --frame: #80858f;
+  --accent: #9d55e0;
+  --accent-bg: rgba(157, 85, 224, 0.18);
+  --accent-border: rgba(157, 85, 224, 0.55);
+  --logo-1: #f0644a;
+  --logo-2: #f39a4a;
+  --logo-3: #f2c14e;
+  --logo-4: #6fbf5f;
+  --logo-5: #5c9be0;
   --shadow:
     rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
   color-scheme: dark;
@@ -73,6 +86,7 @@
 :root[data-theme='bauhaus'] {
   --text: #57514a;
   --text-h: #1d1b18;
+  --frame: #1d1b18;
   --bg: #f2ead7;
   --border: #d8ccb0;
   --accent: #b83418;

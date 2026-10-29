@@ -39,7 +39,7 @@ export default function AddNameForm({ label, onCreate, onCreated, onCancel }: Pr
 	return (
 		<form
 			onSubmit={handleSubmit}
-			className="mb-4 rounded-lg border border-[var(--border)] p-4"
+			className="mb-4 border-[3px] border-[var(--frame)] p-4"
 		>
 			<label className="mb-1 block text-xs font-medium text-[var(--text)]">
 				{label}
@@ -49,7 +49,7 @@ export default function AddNameForm({ label, onCreate, onCreated, onCancel }: Pr
 				value={name}
 				onChange={(e) => setName(e.target.value)}
 				placeholder={`New ${label.toLowerCase()} name`}
-				className="w-full rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-h)] outline-none focus:border-[var(--accent-border)]"
+				className="w-full border-[3px] border-[var(--frame)] bg-transparent px-3 py-2 text-sm text-[var(--text-h)] outline-none focus:border-[var(--accent-border)]"
 			/>
 
 			{error && <p className="mt-2 text-sm text-red-500">{error}</p>}
@@ -58,14 +58,14 @@ export default function AddNameForm({ label, onCreate, onCreated, onCancel }: Pr
 				<button
 					type="submit"
 					disabled={!name.trim() || saving}
-					className="cursor-pointer rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+					className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 				>
 					{saving ? 'Adding…' : `Add ${label.toLowerCase()}`}
 				</button>
 				<button
 					type="button"
 					onClick={onCancel}
-					className="cursor-pointer rounded-md px-3 py-1.5 text-sm text-[var(--text)] transition-colors hover:text-[var(--text-h)]"
+					className="cursor-pointer border-[3px] border-[var(--frame)] px-3 py-1.5 text-sm text-[var(--text)] transition-colors hover:text-[var(--text-h)]"
 				>
 					Cancel
 				</button>

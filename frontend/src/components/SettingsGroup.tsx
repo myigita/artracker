@@ -14,14 +14,14 @@ export default function SettingsGroup({ title, description, defaultOpen = true, 
 	const contentId = useId();
 
 	return (
-		<section aria-labelledby={headingId} className="rounded-lg border border-[var(--border)]">
+		<section aria-labelledby={headingId} className="border-[3px] border-[var(--frame)]">
 			<h2>
 				<button
 					type="button"
 					onClick={() => setOpen((value) => !value)}
 					aria-expanded={open}
 					aria-controls={contentId}
-					className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-5 py-3 text-left text-[var(--text)] transition-colors hover:text-[var(--text-h)]"
+					className="flex w-full cursor-pointer items-center gap-3 px-5 py-3 text-left text-[var(--text)] transition-colors hover:text-[var(--text-h)]"
 				>
 					<span className="flex-1">
 						<span id={headingId} className="block font-semibold text-[var(--text-h)]">

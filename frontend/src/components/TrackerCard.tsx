@@ -17,7 +17,7 @@ type Props = {
 };
 
 const inputClass =
-	'w-full rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm ' +
+	'w-full border-[3px] border-[var(--frame)] bg-transparent px-3 py-2 text-sm ' +
 	'text-[var(--text-h)] outline-none focus:border-[var(--accent-border)]';
 
 const MINUTE = 60 * 1000;
@@ -155,7 +155,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 
 
 	return (
-		<div onClick={handleCardClick} className="group/card cursor-pointer rounded-lg border border-[var(--border)] p-4 shadow-sm transition-colors hover:border-[var(--accent-border)]">
+		<div onClick={handleCardClick} className="group/card cursor-pointer border-[3px] border-[var(--frame)] p-4 transition-colors hover:border-[var(--accent)]">
 			<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
 				<h3 className="min-w-0 basis-full break-words font-semibold text-[var(--text-h)] sm:basis-auto">
 					{tracker.name}
@@ -223,7 +223,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 						onClick={handleUndo}
 						aria-label={`Undo the last-checked update for ${tracker.name}`}
 						title="Put the previous “last checked” time back"
-						className="shrink-0 cursor-pointer rounded-md px-1 py-0.5 text-xs font-medium text-[var(--accent)] underline-offset-2 transition-colors hover:underline focus-visible:underline"
+						className="shrink-0 cursor-pointer px-1 py-0.5 text-xs font-medium text-[var(--accent)] underline-offset-2 transition-colors hover:underline focus-visible:underline"
 					>
 						Undo
 					</button>
@@ -288,14 +288,14 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 					<button
 						type="submit"
 						disabled={saving || !name.trim()}
-						className="cursor-pointer rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+						className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 					>
 						{saving ? 'Saving…' : 'Save'}
 					</button>
 					<button
 						type="button"
 						onClick={() => setEditing(false)}
-						className="cursor-pointer rounded-md px-3 py-1.5 text-sm text-[var(--text)] transition-colors hover:text-[var(--text-h)]"
+						className="cursor-pointer border-[3px] border-[var(--frame)] px-3 py-1.5 text-sm text-[var(--text)] transition-colors hover:text-[var(--text-h)]"
 					>
 						Cancel
 					</button>

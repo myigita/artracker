@@ -18,7 +18,7 @@ type Props = {
 const NEW = '__new__';
 
 const inputClass =
-	'w-full rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm ' +
+	'w-full border-[3px] border-[var(--frame)] bg-transparent px-3 py-2 text-sm ' +
 	'text-[var(--text-h)] outline-none focus:border-[var(--accent-border)]';
 
 const labelClass = 'mb-1 block text-xs font-medium text-[var(--text)]';
@@ -96,7 +96,7 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 	return (
 		<form
 			onSubmit={handleSubmit}
-			className="mb-4 rounded-lg border border-[var(--border)] p-4"
+			className="mb-4 border-[3px] border-[var(--frame)] p-4"
 		>
 			<div className="flex flex-col gap-3 sm:flex-row">
 				<div className="flex-1">
@@ -207,14 +207,14 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 				<button
 					type="submit"
 					disabled={!canSubmit}
-					className="cursor-pointer rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+					className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 				>
 					{saving ? 'Adding…' : 'Add tracker'}
 				</button>
 				<button
 					type="button"
 					onClick={onCancel}
-					className="cursor-pointer rounded-md px-3 py-2 text-sm text-[var(--text)] transition-colors hover:text-[var(--text-h)]"
+					className="cursor-pointer border-[3px] border-[var(--frame)] px-3 py-2 text-sm text-[var(--text)] transition-colors hover:text-[var(--text-h)]"
 				>
 					Cancel
 				</button>

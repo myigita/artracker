@@ -110,9 +110,6 @@ export default function TrackerPanel() {
 		setOpenForm(form);
 	}
 
-	const buttonClass =
-		'cursor-pointer rounded-md px-3 py-2 text-sm font-medium transition-opacity hover:opacity-90';
-
 	const counts: Record<Tab, number | null> = {
 		trackers: trackers.length,
 		subjects: subjects.length,
@@ -154,7 +151,7 @@ export default function TrackerPanel() {
 		<button
 			type="button"
 			onClick={() => openFormAndClearNotice(addFormFor[tab])}
-			className={`${buttonClass} bg-[var(--accent)] text-white`}
+			className="cursor-pointer whitespace-nowrap bg-[var(--accent)] px-3 text-lg font-bold uppercase text-white sm:px-4 transition-opacity hover:opacity-90"
 		>
 			{addLabel[tab]}
 		</button>
@@ -175,9 +172,9 @@ export default function TrackerPanel() {
 				action={addButton}
 			/>
 
-			<div className="mx-auto max-w-2xl p-6">
+			<main className="mx-auto mb-4 w-[calc(100%-2rem)] max-w-7xl border-[3px] border-t-0 border-[var(--frame)] p-4 sm:mb-6 sm:w-[calc(100%-3rem)] sm:p-6">
 				{notice && (
-					<p className="mb-4 rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-2 text-sm text-[var(--text-h)]">
+					<p className="mb-4 border-[3px] border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-2 text-sm text-[var(--text-h)]">
 						{notice}
 					</p>
 				)}
@@ -214,7 +211,7 @@ export default function TrackerPanel() {
 				)}
 
 				{loadError && (
-					<div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-sm text-[var(--text-h)]">
+					<div className="border-[3px] border-red-500 bg-red-500/10 p-4 text-sm text-[var(--text-h)]">
 						<p className="font-medium">Couldn’t reach the server.</p>
 						<p className="mt-1 text-[var(--text)]">
 							Your data is probably fine — this page just can’t load it right now.
@@ -225,7 +222,7 @@ export default function TrackerPanel() {
 								setLoading(true);
 								fetchAll();
 							}}
-							className="mt-3 cursor-pointer rounded-md border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-h)] transition-colors hover:border-[var(--accent-border)]"
+							className="mt-3 cursor-pointer border-[3px] border-[var(--frame)] px-3 py-1.5 text-sm font-medium text-[var(--text-h)] transition-colors hover:border-[var(--accent-border)]"
 						>
 							Retry
 						</button>
@@ -240,7 +237,7 @@ export default function TrackerPanel() {
 					<>
 						<div className="flex flex-col gap-3">{cards}</div>
 						{trackers.length === 0 && openForm === null && (
-							<p className="rounded-lg border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--text)]">
+							<p className="border-[3px] border-dashed border-[var(--frame)] p-8 text-center text-sm text-[var(--text)]">
 								No trackers yet — add your first one to get started.
 							</p>
 						)}
@@ -296,7 +293,7 @@ export default function TrackerPanel() {
 						onDeleted={fetchCategories}
 					/>
 				)}
-			</div>
+			</main>
 		</>
 	);
 }
