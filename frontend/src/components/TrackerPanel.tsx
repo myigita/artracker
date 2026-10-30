@@ -151,7 +151,7 @@ export default function TrackerPanel() {
 		<button
 			type="button"
 			onClick={() => openFormAndClearNotice(addFormFor[tab])}
-			className="grid cursor-pointer place-items-center whitespace-nowrap bg-[var(--accent)] px-3 text-lg font-bold uppercase text-white transition-opacity hover:opacity-90 sm:px-4"
+			className="grid cursor-pointer place-items-center whitespace-nowrap bg-[var(--accent)] px-3 text-lg font-bold uppercase text-[var(--on-accent)] transition-opacity hover:opacity-90 sm:px-4"
 		>
 			{/* Every label shares one grid cell, so the button is always as wide as the longest. */}
 			{Object.values(addLabel).filter(Boolean).map((label) => (

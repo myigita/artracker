@@ -104,7 +104,7 @@ export default function BackupPanel({ onImported }: Props) {
 					type="button"
 					onClick={handleExport}
 					disabled={busy}
-					className={`${buttonClass} mt-3 bg-[var(--accent)] text-white`}
+					className={`${buttonClass} mt-3 bg-[var(--accent)] text-[var(--on-accent)]`}
 				>
 					Download backup
 				</button>
@@ -172,7 +172,7 @@ export default function BackupPanel({ onImported }: Props) {
 					className={`${buttonClass} mt-3 ${
 						mode === 'replace'
 							? 'bg-red-600 text-white'
-							: 'bg-[var(--accent)] text-white'
+							: 'bg-[var(--accent)] text-[var(--on-accent)]'
 					}`}
 				>
 					{busy

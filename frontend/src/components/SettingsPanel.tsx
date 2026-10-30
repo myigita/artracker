@@ -99,7 +99,7 @@ export default function SettingsPanel({ onPolled }: Props) {
 						type="button"
 						onClick={handlePoll}
 						disabled={polling}
-						className="mt-3 cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+						className="mt-3 cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-2 text-sm font-medium text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 					>
 						{polling ? 'Checking…' : 'Check mail now'}
 					</button>

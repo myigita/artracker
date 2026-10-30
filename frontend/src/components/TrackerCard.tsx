@@ -169,7 +169,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 						aria-label={`${tracker.unread_count} new update${
 							tracker.unread_count === 1 ? '' : 's'
 						} for ${tracker.name}`}
-						className="shrink-0 cursor-pointer rounded-full bg-[var(--accent)] px-2 py-0.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+						className="shrink-0 cursor-pointer rounded-full bg-[var(--accent)] px-2 py-0.5 text-xs font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90"
 					>
 						{tracker.unread_count} new
 					</button>
@@ -288,7 +288,7 @@ export default function TrackerCard({ tracker, onChecked, onDeleted, onUpdated }
 					<button
 						type="submit"
 						disabled={saving || !name.trim()}
-						className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+						className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 					>
 						{saving ? 'Saving…' : 'Save'}
 					</button>

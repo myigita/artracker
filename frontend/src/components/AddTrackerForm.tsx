@@ -207,7 +207,7 @@ export default function AddTrackerForm({ onAdded, onCancel }: Props) {
 				<button
 					type="submit"
 					disabled={!canSubmit}
-					className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+					className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-2 text-sm font-medium text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 				>
 					{saving ? 'Adding…' : 'Add tracker'}
 				</button>

@@ -58,7 +58,7 @@ export default function AddNameForm({ label, onCreate, onCreated, onCancel }: Pr
 				<button
 					type="submit"
 					disabled={!name.trim() || saving}
-					className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+					className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 				>
 					{saving ? 'Adding…' : `Add ${label.toLowerCase()}`}
 				</button>

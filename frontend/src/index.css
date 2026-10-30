@@ -14,6 +14,8 @@
   --accent-border-alpha: 50%;
   --accent-bg: color-mix(in oklab, var(--accent) var(--accent-bg-alpha), transparent);
   --accent-border: color-mix(in oklab, var(--accent) var(--accent-border-alpha), transparent);
+  /* Text on a solid accent fill. */
+  --on-accent: #fff;
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
   /* The logo keeps the accent's hue and chroma and steps through these lightnesses. */
@@ -68,7 +70,8 @@
   color-scheme: light;
 }
 
-:root[data-theme='dark'] {
+:root[data-theme='dark'],
+:root[data-theme='oled-custom'] {
   --text: #9ca3af;
   --text-h: #f3f4f6;
   --bg: #0e0f13;
@@ -82,6 +85,11 @@
   --shadow:
     rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
   color-scheme: dark;
+}
+
+:root[data-theme='oled-custom'] {
+  --bg: #000;
+  --border: #26272e;
 }
 
 :root[data-theme='bauhaus'] {
@@ -100,6 +108,34 @@
   --logo-5: #235f8c;
   --shadow: #1d1b18 3px 3px 0 0;
   color-scheme: light;
+}
+
+/* Like Bauhaus, sets --accent directly, so the custom accent doesn't reach it. */
+:root[data-theme='oled'],
+:root[data-theme='oled-dim'] {
+  --text: #e6e6e6;
+  --text-h: #fff;
+  --frame: #fff;
+  --bg: #000;
+  --border: #fff;
+  --accent: #ff5949;
+  --accent-bg: #5c1812;
+  --accent-border: #ff9a1f;
+  --on-accent: #000;
+  --logo-1: #ff5949;
+  --logo-2: #ff683c;
+  --logo-3: #ff7830;
+  --logo-4: #ff8a22;
+  --logo-5: #ff9a1f;
+  --shadow: none;
+  color-scheme: dark;
+}
+
+:root[data-theme='oled-dim'] {
+  --text: #9a9a9a;
+  --text-h: #c8c8c8;
+  --frame: #8c8c8c;
+  --border: #8c8c8c;
 }
 
 html {

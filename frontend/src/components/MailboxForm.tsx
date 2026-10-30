@@ -177,7 +177,7 @@ export default function MailboxForm({ account, onSave, onSaved, onClear, onClear
 						type="submit"
 						disabled={saving || !host.trim() || !username.trim() || needsPassword}
 						title={needsPassword ? 'A password is required the first time' : undefined}
-						className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+						className="cursor-pointer border-[3px] border-[var(--frame)] bg-[var(--accent)] px-3 py-2 text-sm font-medium text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
 					>
 						{saving ? 'Saving…' : 'Save mailbox'}
 					</button>
